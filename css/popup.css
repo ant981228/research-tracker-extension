@@ -1,0 +1,319 @@
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  background-color: #f9f9f9;
+  width: 400px;
+  min-height: 300px;
+  overflow-y: auto;
+}
+
+.container {
+  padding: 16px;
+}
+
+h1 {
+  color: #2c3e50;
+  font-size: 20px;
+  margin-bottom: 16px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #e1e1e1;
+}
+
+h2 {
+  color: #34495e;
+  font-size: 16px;
+  margin-top: 8px;
+  margin-bottom: 8px;
+}
+
+h3 {
+  color: #34495e;
+  font-size: 14px;
+  margin-top: 8px;
+  margin-bottom: 8px;
+}
+
+.section {
+  margin-bottom: 16px;
+  padding: 12px;
+  background-color: #fff;
+  border-radius: 4px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+#status {
+  margin-bottom: 12px;
+}
+
+#recording-status {
+  font-weight: bold;
+}
+
+#session-name-input {
+  margin-bottom: 12px;
+}
+
+#session-name {
+  width: 100%;
+  padding: 6px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-family: inherit;
+}
+
+.start-only {
+  display: block;
+}
+
+.recording-active {
+  color: #27ae60;
+}
+
+.recording-paused {
+  color: #f39c12;
+}
+
+.recording-stopped {
+  color: #e74c3c;
+}
+
+#buttons {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.action-btn {
+  flex: 1;
+  padding: 8px 12px;
+  border: none;
+  border-radius: 4px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+#start-btn {
+  background-color: #27ae60;
+  color: white;
+}
+
+#pause-btn {
+  background-color: #f39c12;
+  color: white;
+}
+
+#stop-btn {
+  background-color: #e74c3c;
+  color: white;
+}
+
+.action-btn:hover {
+  opacity: 0.9;
+}
+
+.action-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+#session-status {
+  margin-top: 16px;
+  margin-bottom: 16px;
+}
+
+.status-section {
+  margin-bottom: 12px;
+}
+
+.status-section h4 {
+  margin-bottom: 4px;
+  font-size: 14px;
+  color: #555;
+  border-bottom: 1px solid #eee;
+  padding-bottom: 4px;
+}
+
+.page-item {
+  padding: 6px;
+  border-radius: 4px;
+  background-color: #f5f5f5;
+  margin-bottom: 4px;
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.page-item.selected {
+  background-color: #e1f0fa;
+  border-left: 3px solid #3498db;
+}
+
+.history-list {
+  max-height: 120px;
+  overflow-y: auto;
+}
+
+.page-action-btn {
+  background-color: #3498db;
+  color: white;
+  padding: 2px 6px;
+  border: none;
+  border-radius: 3px;
+  font-size: 11px;
+  cursor: pointer;
+  margin-top: 4px;
+  display: inline-block;
+}
+
+.page-action-btn:hover {
+  background-color: #2980b9;
+}
+
+.page-title {
+  font-weight: bold;
+  display: block;
+}
+
+.page-url {
+  color: #666;
+  font-size: 11px;
+  display: block;
+  margin-top: 2px;
+}
+
+.page-time {
+  color: #999;
+  font-size: 10px;
+  display: block;
+  margin-top: 2px;
+}
+
+.search-query {
+  font-weight: bold;
+  display: block;
+}
+
+.search-engine {
+  color: #666;
+  font-size: 11px;
+  display: inline-block;
+  margin-right: 8px;
+}
+
+#notes-section {
+  margin-top: 12px;
+  border-top: 1px solid #eee;
+  padding-top: 12px;
+}
+
+#note-input {
+  width: 100%;
+  height: 80px;
+  padding: 8px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  resize: none;
+  margin-bottom: 8px;
+  font-family: inherit;
+}
+
+#add-note-btn {
+  background-color: #3498db;
+  color: white;
+  padding: 6px 12px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+#add-note-btn:hover {
+  background-color: #2980b9;
+}
+
+#sessions-list {
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.session-item {
+  padding: 8px;
+  border-bottom: 1px solid #eee;
+}
+
+.session-item:last-child {
+  border-bottom: none;
+}
+
+.session-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+.session-title {
+  font-weight: bold;
+  cursor: pointer;
+  color: #2980b9;
+  padding: 2px 4px;
+  border-radius: 3px;
+}
+
+.session-title:hover {
+  background-color: #f0f0f0;
+  text-decoration: underline;
+}
+
+.session-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.export-btn, .delete-btn {
+  padding: 4px 8px;
+  border: none;
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+  color: white;
+}
+
+.export-btn {
+  background-color: #3498db;
+}
+
+.export-btn:hover {
+  background-color: #2980b9;
+}
+
+.delete-btn {
+  background-color: #e74c3c;
+}
+
+.delete-btn:hover {
+  background-color: #c0392b;
+}
+
+.hidden {
+  display: none;
+}
+
+.loading {
+  padding: 8px;
+  color: #3498db;
+  font-style: italic;
+}
+
+.error {
+  padding: 8px;
+  color: #e74c3c;
+  font-style: italic;
+}

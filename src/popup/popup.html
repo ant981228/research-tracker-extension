@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Research Tracker</title>
+  <link rel="stylesheet" href="../../css/popup.css">
+</head>
+<body>
+  <div class="container">
+    <h1>Research Tracker</h1>
+    
+    <div id="controls" class="section">
+      <div id="status">
+        <p>Recording Status: <span id="recording-status">Not Recording</span></p>
+      </div>
+      
+      <div id="session-name-input" class="start-only">
+        <label for="session-name">Session Name:</label>
+        <input type="text" id="session-name" placeholder="My Research Session">
+      </div>
+      
+      <div id="buttons">
+        <button id="start-btn" class="action-btn">Start Recording</button>
+        <button id="pause-btn" class="action-btn" disabled>Pause</button>
+        <button id="stop-btn" class="action-btn" disabled>Stop</button>
+      </div>
+    </div>
+    
+    <div id="current-session" class="section hidden">
+      <h2>Current Session: <span id="current-session-name">Unnamed</span></h2>
+      <p>Started: <span id="session-start-time">-</span></p>
+      <p>Events recorded: <span id="event-count">0</span></p>
+      
+      <div id="session-status">
+        <h3>Session Activity</h3>
+        
+        <div class="status-section">
+          <h4>Current Page</h4>
+          <div id="current-page" class="page-item selectable"></div>
+        </div>
+        
+        <div class="status-section">
+          <h4>Recent Content Pages</h4>
+          <div id="recent-pages" class="history-list"></div>
+        </div>
+        
+        <div class="status-section">
+          <h4>Recent Searches</h4>
+          <div id="recent-searches" class="history-list"></div>
+        </div>
+      </div>
+      
+      <div id="notes-section">
+        <h3>Add Note for <span id="note-target">Current Page</span></h3>
+        <textarea id="note-input" placeholder="Add your observations about this page..."></textarea>
+        <button id="add-note-btn">Add Note</button>
+      </div>
+    </div>
+    
+    <div id="sessions-section" class="section">
+      <h2>Previous Sessions</h2>
+      <div id="sessions-list">
+        <p id="no-sessions-msg">No completed sessions yet</p>
+      </div>
+    </div>
+  </div>
+  
+  <script src="popup.js"></script>
+</body>
+</html>
