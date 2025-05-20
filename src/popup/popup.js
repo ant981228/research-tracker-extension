@@ -14,11 +14,43 @@ let currentSessionSection;
 let currentPageEl;
 let recentPagesEl;
 let recentSearchesEl;
-let noteTargetEl;
-let noteInput;
-let addNoteBtn;
 let sessionsList;
 let noSessionsMsg;
+
+// Action buttons
+let addNoteBtn;
+let editMetadataBtn;
+let viewPagesBtn;
+let viewSearchesBtn;
+
+// Metadata Modal Elements
+let metadataModal;
+let metadataTitle;
+let metadataAuthor;
+let metadataDate;
+let metadataPublisher;
+let metadataType;
+let saveMetadataBtn;
+let cancelMetadataBtn;
+let closeMetadataBtn;
+
+// Note Modal Elements
+let noteModal;
+let noteTargetEl;
+let noteInput;
+let saveNoteBtn;
+let cancelNoteBtn;
+let closeNoteModalBtn;
+
+// Pages Modal Elements
+let pagesModal;
+let closePagesModalBtn;
+let closePagesBtn;
+
+// Searches Modal Elements
+let searchesModal;
+let closeSearchesModalBtn;
+let closeSearchesBtn;
 
 // Current session state
 let selectedPageUrl = null;
@@ -29,6 +61,74 @@ let isRecording = false;
 let isPaused = false;
 let currentSession = null;
 let currentUrl = null;
+
+// Modal management system
+let modalStack = [];
+
+// Helper functions for modal management
+function showModal(modal, type) {
+  // Add current modal to stack if there's one already visible
+  if (pagesModal.style.display === 'flex') {
+    modalStack.push('pages');
+    pagesModal.classList.add('hidden');
+    pagesModal.style.display = 'none';
+  } else if (searchesModal.style.display === 'flex') {
+    modalStack.push('searches');
+    searchesModal.classList.add('hidden');
+    searchesModal.style.display = 'none';
+  } else if (noteModal.style.display === 'flex') {
+    modalStack.push('note');
+    noteModal.classList.add('hidden');
+    noteModal.style.display = 'none';
+  } else if (metadataModal.style.display === 'flex') {
+    modalStack.push('metadata');
+    metadataModal.classList.add('hidden');
+    metadataModal.style.display = 'none';
+  }
+  
+  // Show the new modal
+  modal.classList.remove('hidden');
+  modal.style.display = 'flex';
+  
+  console.log('Modal stack after showing:', modalStack);
+}
+
+function hideCurrentModal() {
+  if (pagesModal.style.display === 'flex') {
+    pagesModal.classList.add('hidden');
+    pagesModal.style.display = 'none';
+  } else if (searchesModal.style.display === 'flex') {
+    searchesModal.classList.add('hidden');
+    searchesModal.style.display = 'none';
+  } else if (noteModal.style.display === 'flex') {
+    noteModal.classList.add('hidden');
+    noteModal.style.display = 'none';
+  } else if (metadataModal.style.display === 'flex') {
+    metadataModal.classList.add('hidden');
+    metadataModal.style.display = 'none';
+  }
+  
+  // If there's a previous modal in the stack, show it
+  if (modalStack.length > 0) {
+    const previousModal = modalStack.pop();
+    
+    if (previousModal === 'pages') {
+      pagesModal.classList.remove('hidden');
+      pagesModal.style.display = 'flex';
+    } else if (previousModal === 'searches') {
+      searchesModal.classList.remove('hidden');
+      searchesModal.style.display = 'flex';
+    } else if (previousModal === 'note') {
+      noteModal.classList.remove('hidden');
+      noteModal.style.display = 'flex';
+    } else if (previousModal === 'metadata') {
+      metadataModal.classList.remove('hidden');
+      metadataModal.style.display = 'flex';
+    }
+  }
+  
+  console.log('Modal stack after hiding:', modalStack);
+}
 
 function init() {
   // Initialize UI elements
@@ -48,14 +148,95 @@ function init() {
   noteTargetEl = document.getElementById('note-target');
   noteInput = document.getElementById('note-input');
   addNoteBtn = document.getElementById('add-note-btn');
+  editMetadataBtn = document.getElementById('edit-metadata-btn');
   sessionsList = document.getElementById('sessions-list');
   noSessionsMsg = document.getElementById('no-sessions-msg');
   
-  // Add event listeners
+  // Initialize metadata modal elements
+  metadataModal = document.getElementById('metadata-modal');
+  metadataTitle = document.getElementById('metadata-title');
+  metadataAuthor = document.getElementById('metadata-author');
+  metadataDate = document.getElementById('metadata-date');
+  metadataPublisher = document.getElementById('metadata-publisher');
+  metadataType = document.getElementById('metadata-type');
+  saveMetadataBtn = document.getElementById('save-metadata-btn');
+  cancelMetadataBtn = document.getElementById('cancel-metadata-btn');
+  closeMetadataBtn = document.querySelector('.close-modal');
+  
+  // Initialize note modal elements
+  noteModal = document.getElementById('note-modal');
+  saveNoteBtn = document.getElementById('save-note-btn');
+  cancelNoteBtn = document.getElementById('cancel-note-btn');
+  closeNoteModalBtn = document.querySelector('.close-note-modal');
+  
+  // Initialize pages modal elements
+  pagesModal = document.getElementById('pages-modal');
+  closePagesModalBtn = document.querySelector('.close-pages-modal');
+  closePagesBtn = document.getElementById('close-pages-btn');
+  
+  // Initialize searches modal elements
+  searchesModal = document.getElementById('searches-modal');
+  closeSearchesModalBtn = document.querySelector('.close-searches-modal');
+  closeSearchesBtn = document.getElementById('close-searches-btn');
+  
+  // Action buttons
+  viewPagesBtn = document.getElementById('view-pages-btn');
+  viewSearchesBtn = document.getElementById('view-searches-btn');
+
+  // Add event listeners for controls
   startBtn.addEventListener('click', startRecording);
   pauseBtn.addEventListener('click', togglePauseRecording);
   stopBtn.addEventListener('click', stopRecording);
-  addNoteBtn.addEventListener('click', addNote);
+  
+  // Add event listeners for action buttons
+  addNoteBtn.addEventListener('click', openNoteModal);
+  editMetadataBtn.addEventListener('click', openMetadataModal);
+  viewPagesBtn.addEventListener('click', openPagesModal);
+  viewSearchesBtn.addEventListener('click', openSearchesModal);
+  
+  // Metadata modal event listeners
+  saveMetadataBtn.addEventListener('click', saveMetadata);
+  cancelMetadataBtn.addEventListener('click', closeMetadataModal);
+  closeMetadataBtn.addEventListener('click', closeMetadataModal);
+  
+  // Note modal event listeners
+  saveNoteBtn.addEventListener('click', saveNote);
+  cancelNoteBtn.addEventListener('click', closeNoteModal);
+  closeNoteModalBtn.addEventListener('click', closeNoteModal);
+  
+  // Pages modal event listeners
+  closePagesBtn.addEventListener('click', closePagesModal);
+  closePagesModalBtn.addEventListener('click', closePagesModal);
+  
+  // Searches modal event listeners
+  closeSearchesBtn.addEventListener('click', closeSearchesModal);
+  closeSearchesModalBtn.addEventListener('click', closeSearchesModal);
+  
+  // Update activity status when interacting with the popup
+  document.addEventListener('click', updateActivityStatus);
+  document.addEventListener('keydown', updateActivityStatus);
+  
+  // Add window unload handler to make sure data is saved before popup closes
+  window.addEventListener('beforeunload', () => {
+    // Save any pending notes
+    if (isRecording && noteInput.value.trim() !== '' && selectedPageUrl) {
+      // Send a message to save the current note before closing
+      chrome.runtime.sendMessage({ 
+        action: 'forceAutosave'
+      });
+    }
+  });
+  
+  // Close modals when clicking outside
+  window.addEventListener('click', (event) => {
+    if (event.target === metadataModal) closeMetadataModal();
+    if (event.target === noteModal) closeNoteModal();
+    if (event.target === pagesModal) closePagesModal();
+    if (event.target === searchesModal) closeSearchesModal();
+  });
+  
+  // Update activity when popup opens
+  updateActivityStatus();
   
   // Get current status
   refreshStatus();
@@ -65,6 +246,13 @@ function init() {
   
   // Load previous sessions
   loadSessionsAndDisplay();
+}
+
+// Function to update activity status in the background
+function updateActivityStatus() {
+  chrome.runtime.sendMessage({ 
+    action: 'checkActivity'
+  });
 }
 
 function refreshStatus(resetSelection = false) {
@@ -156,26 +344,53 @@ function updatePageDisplay(url) {
         selectUrl(tab.url, tab.title || 'Untitled');
       }
       
-      // Display current page
-      currentPageEl.innerHTML = `
-        <div class="page-title">${tab.title || 'Untitled'}</div>
-        <div class="page-url">${truncateUrl(tab.url)}</div>
-        <div class="page-time">Current page</div>
-        <button class="page-action-btn add-note-btn">Add Note</button>
-      `;
-      
-      // Set up button handler
-      currentPageEl.querySelector('.add-note-btn').addEventListener('click', (e) => {
-        e.stopPropagation(); // Prevent event bubbling
-        selectUrl(tab.url, tab.title || 'Untitled');
-        document.querySelectorAll('.page-item.selected').forEach(el => {
-          el.classList.remove('selected');
-        });
-        currentPageEl.classList.add('selected');
+      // Get metadata first if available
+      chrome.runtime.sendMessage({
+        action: 'getPageMetadata',
+        url: tab.url
+      }, (response) => {
+        const metadata = (response && response.success && response.metadata) ? response.metadata : {};
+        const pageTitle = metadata.title || tab.title || 'Untitled';
         
-        // Focus the note textarea
-        noteInput.focus();
+        // Display current page with best available title
+        currentPageEl.innerHTML = `
+          <div class="page-title">${pageTitle}</div>
+          <div class="page-url">${truncateUrl(tab.url)}</div>
+          <div class="page-time">Current page</div>
+          <div class="page-actions">
+            <button class="page-action-btn add-note-btn">Add Note</button>
+            <button class="page-action-btn edit-metadata-btn">Edit Metadata</button>
+          </div>
+        `;
+        
+        // Set up add note button handler
+        currentPageEl.querySelector('.add-note-btn').addEventListener('click', (e) => {
+          e.stopPropagation(); // Prevent event bubbling
+          selectUrl(tab.url, pageTitle);
+          document.querySelectorAll('.page-item.selected').forEach(el => {
+            el.classList.remove('selected');
+          });
+          currentPageEl.classList.add('selected');
+          
+          // Focus the note textarea
+          noteInput.focus();
+        });
+        
+        // Set up edit metadata button handler
+        currentPageEl.querySelector('.edit-metadata-btn').addEventListener('click', (e) => {
+          e.stopPropagation(); // Prevent event bubbling
+          selectUrl(tab.url, pageTitle);
+          document.querySelectorAll('.page-item.selected').forEach(el => {
+            el.classList.remove('selected');
+          });
+          currentPageEl.classList.add('selected');
+          
+          // Open the metadata modal
+          openMetadataModal();
+        });
       });
+      
+      // The event handlers are now set up in the callback
     }
   });
 }
@@ -192,31 +407,58 @@ function updateRecent(recentPages, recentSearches) {
     recentPages.forEach(page => {
       if (page.url === currentUrl) return; // Skip current page
       
-      const pageEl = document.createElement('div');
-      pageEl.className = 'page-item';
-      pageEl.innerHTML = `
-        <div class="page-title">${page.title || 'Untitled'}</div>
-        <div class="page-url">${truncateUrl(page.url)}</div>
-        <div class="page-time">${formatTimeDifference(page.timestamp)}</div>
-        <button class="page-action-btn add-note-btn">Add Note</button>
-      `;
+      // First, get any metadata for this page
+      chrome.runtime.sendMessage({
+        action: 'getPageMetadata',
+        url: page.url
+      }, (response) => {
+        const metadata = (response && response.success && response.metadata) ? response.metadata : {};
+        const pageTitle = metadata.title || page.title || 'Untitled';
       
-      // Add button click handler
-      pageEl.querySelector('.add-note-btn').addEventListener('click', (e) => {
-        e.stopPropagation(); // Prevent event bubbling
-        selectUrl(page.url, page.title || 'Untitled');
+        const pageEl = document.createElement('div');
+        pageEl.className = 'page-item';
+        pageEl.innerHTML = `
+          <div class="page-title">${pageTitle}</div>
+          <div class="page-url">${truncateUrl(page.url)}</div>
+          <div class="page-time">${formatTimeDifference(page.timestamp)}</div>
+          <div class="page-actions">
+            <button class="page-action-btn add-note-btn">Add Note</button>
+            <button class="page-action-btn edit-metadata-btn">Edit Metadata</button>
+          </div>
+        `;
         
-        // Mark this item as selected and remove selection from others
-        document.querySelectorAll('.page-item.selected').forEach(el => {
-          el.classList.remove('selected');
+        // Add note button click handler
+        pageEl.querySelector('.add-note-btn').addEventListener('click', (e) => {
+          e.stopPropagation(); // Prevent event bubbling
+          selectUrl(page.url, pageTitle);
+          
+          // Mark this item as selected and remove selection from others
+          document.querySelectorAll('.page-item.selected').forEach(el => {
+            el.classList.remove('selected');
+          });
+          pageEl.classList.add('selected');
+          
+          // Focus the note textarea
+          noteInput.focus();
         });
-        pageEl.classList.add('selected');
         
-        // Focus the note textarea
-        noteInput.focus();
+        // Add metadata button click handler
+        pageEl.querySelector('.edit-metadata-btn').addEventListener('click', (e) => {
+          e.stopPropagation(); // Prevent event bubbling
+          selectUrl(page.url, pageTitle);
+          
+          // Mark this item as selected and remove selection from others
+          document.querySelectorAll('.page-item.selected').forEach(el => {
+            el.classList.remove('selected');
+          });
+          pageEl.classList.add('selected');
+          
+          // Open the metadata modal
+          openMetadataModal();
+        });
+        
+        recentPagesEl.appendChild(pageEl);
       });
-      
-      recentPagesEl.appendChild(pageEl);
     });
   }
   
@@ -234,10 +476,13 @@ function updateRecent(recentPages, recentSearches) {
           <span class="search-engine">${search.engine}</span>
           <span class="page-time">${formatTimeDifference(search.timestamp)}</span>
         </div>
-        <button class="page-action-btn add-note-btn">Add Note</button>
+        <div class="page-actions">
+          <button class="page-action-btn add-note-btn">Add Note</button>
+          <button class="page-action-btn edit-metadata-btn">Edit Metadata</button>
+        </div>
       `;
       
-      // Add button click handler
+      // Add note button click handler
       searchEl.querySelector('.add-note-btn').addEventListener('click', (e) => {
         e.stopPropagation(); // Prevent event bubbling
         selectUrl(search.url, `Search: "${search.query}"`);
@@ -250,6 +495,21 @@ function updateRecent(recentPages, recentSearches) {
         
         // Focus the note textarea
         noteInput.focus();
+      });
+      
+      // Add metadata button click handler
+      searchEl.querySelector('.edit-metadata-btn').addEventListener('click', (e) => {
+        e.stopPropagation(); // Prevent event bubbling
+        selectUrl(search.url, `Search: "${search.query}"`);
+        
+        // Mark this item as selected and remove selection from others
+        document.querySelectorAll('.page-item.selected').forEach(el => {
+          el.classList.remove('selected');
+        });
+        searchEl.classList.add('selected');
+        
+        // Open the metadata modal
+        openMetadataModal();
       });
       
       recentSearchesEl.appendChild(searchEl);
@@ -352,7 +612,199 @@ function getCurrentTabUrl() {
   });
 }
 
-function addNote() {
+// Modal functions
+function openNoteModal() {
+  if (!selectedPageUrl && !currentUrl) {
+    alert('No page selected to add a note for');
+    return;
+  }
+  
+  // Use the best available page title for the note target
+  const targetUrl = selectedPageUrl || currentUrl;
+  
+  // Get metadata if available to get the best title
+  chrome.runtime.sendMessage({
+    action: 'getPageMetadata',
+    url: targetUrl
+  }, (response) => {
+    chrome.tabs.query({ active: true, currentWindow: true }, tabs => {
+      const tab = tabs[0];
+      const metadata = (response && response.success && response.metadata) ? response.metadata : {};
+      const pageTitle = metadata.title || (tab ? tab.title : 'Selected Page') || 'Selected Page';
+      
+      // Set the note target
+      noteTargetEl.textContent = pageTitle;
+      
+      // Display the modal using our modal management system
+      showModal(noteModal, 'note');
+      
+      // Focus the note input
+      noteInput.focus();
+    });
+  });
+}
+
+function closeNoteModal() {
+  hideCurrentModal();
+}
+
+function openPagesModal() {
+  // Refresh the recent pages data
+  if (currentSession && currentSession.recentPages) {
+    updateRecentPages(currentSession.recentPages);
+  }
+  
+  // Show the modal
+  showModal(pagesModal, 'pages');
+}
+
+function closePagesModal() {
+  hideCurrentModal();
+}
+
+function openSearchesModal() {
+  // Refresh the recent searches data
+  if (currentSession && currentSession.recentSearches) {
+    updateRecentSearches(currentSession.recentSearches);
+  }
+  
+  // Show the modal
+  showModal(searchesModal, 'searches');
+}
+
+function closeSearchesModal() {
+  hideCurrentModal();
+}
+
+// Helper to update recent pages display
+function updateRecentPages(recentPages) {
+  // Clear existing elements
+  recentPagesEl.innerHTML = '';
+  
+  if (!recentPages || recentPages.length === 0) {
+    recentPagesEl.innerHTML = '<div class="page-item">No pages visited yet</div>';
+    return;
+  }
+  
+  // Add recent pages
+  recentPages.forEach(page => {
+    // First, get any metadata for this page
+    chrome.runtime.sendMessage({
+      action: 'getPageMetadata',
+      url: page.url
+    }, (response) => {
+      const metadata = (response && response.success && response.metadata) ? response.metadata : {};
+      const pageTitle = metadata.title || page.title || 'Untitled';
+    
+      const pageEl = document.createElement('div');
+      pageEl.className = 'page-item';
+      pageEl.innerHTML = `
+        <div class="page-title">${pageTitle}</div>
+        <div class="page-url">${truncateUrl(page.url)}</div>
+        <div class="page-time">${formatTimeDifference(page.timestamp)}</div>
+        <div class="page-actions">
+          <button class="page-action-btn add-note-btn">Add Note</button>
+          <button class="page-action-btn edit-metadata-btn">Edit Metadata</button>
+        </div>
+      `;
+      
+      // Add note button click handler
+      pageEl.querySelector('.add-note-btn').addEventListener('click', (e) => {
+        e.stopPropagation(); // Prevent event bubbling
+        selectUrl(page.url, pageTitle);
+        
+        // Mark this item as selected and remove selection from others
+        document.querySelectorAll('.page-item.selected').forEach(el => {
+          el.classList.remove('selected');
+        });
+        pageEl.classList.add('selected');
+        
+        // Open the note modal using our modal management system
+        openNoteModal();
+      });
+      
+      // Add metadata button click handler
+      pageEl.querySelector('.edit-metadata-btn').addEventListener('click', (e) => {
+        e.stopPropagation(); // Prevent event bubbling
+        selectUrl(page.url, pageTitle);
+        
+        // Mark this item as selected and remove selection from others
+        document.querySelectorAll('.page-item.selected').forEach(el => {
+          el.classList.remove('selected');
+        });
+        pageEl.classList.add('selected');
+        
+        // Open the metadata modal using our modal management system
+        openMetadataModal();
+      });
+      
+      recentPagesEl.appendChild(pageEl);
+    });
+  });
+}
+
+// Helper to update recent searches display
+function updateRecentSearches(recentSearches) {
+  // Clear existing elements
+  recentSearchesEl.innerHTML = '';
+  
+  if (!recentSearches || recentSearches.length === 0) {
+    recentSearchesEl.innerHTML = '<div class="page-item">No searches yet</div>';
+    return;
+  }
+  
+  // Add recent searches
+  recentSearches.forEach(search => {
+    const searchEl = document.createElement('div');
+    searchEl.className = 'page-item';
+    
+    searchEl.innerHTML = `
+      <div class="search-query">"${search.query}"</div>
+      <div>
+        <span class="search-engine">${search.engine}</span>
+        <span class="page-time">${formatTimeDifference(search.timestamp)}</span>
+      </div>
+      <div class="page-actions">
+        <button class="page-action-btn add-note-btn">Add Note</button>
+        <button class="page-action-btn edit-metadata-btn">Edit Metadata</button>
+      </div>
+    `;
+    
+    // Add note button click handler
+    searchEl.querySelector('.add-note-btn').addEventListener('click', (e) => {
+      e.stopPropagation(); // Prevent event bubbling
+      selectUrl(search.url, `Search: "${search.query}"`);
+      
+      // Mark this item as selected and remove selection from others
+      document.querySelectorAll('.page-item.selected').forEach(el => {
+        el.classList.remove('selected');
+      });
+      searchEl.classList.add('selected');
+      
+      // Open the note modal using our modal management system
+      openNoteModal();
+    });
+    
+    // Add metadata button click handler
+    searchEl.querySelector('.edit-metadata-btn').addEventListener('click', (e) => {
+      e.stopPropagation(); // Prevent event bubbling
+      selectUrl(search.url, `Search: "${search.query}"`);
+      
+      // Mark this item as selected and remove selection from others
+      document.querySelectorAll('.page-item.selected').forEach(el => {
+        el.classList.remove('selected');
+      });
+      searchEl.classList.add('selected');
+      
+      // Open the metadata modal using our modal management system
+      openMetadataModal();
+    });
+    
+    recentSearchesEl.appendChild(searchEl);
+  });
+}
+
+function saveNote() {
   // Prevent duplicate submissions
   if (addNoteInProgress) {
     return;
@@ -398,6 +850,9 @@ function addNote() {
       
       // Update note target label back to default
       noteTargetEl.textContent = 'Current Page';
+      
+      // Close the note modal and restore previous modal if applicable
+      closeNoteModal();
       
       // Re-enable the button after a short delay
       setTimeout(() => {
@@ -583,6 +1038,153 @@ function downloadData(data, filename) {
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
+}
+
+// Metadata Modal Functions
+let currentPageMetadata = null;
+
+function openMetadataModal() {
+  if (!selectedPageUrl) {
+    alert('Please select a page first to edit its metadata.');
+    return;
+  }
+  
+  // Reset form
+  metadataTitle.value = '';
+  metadataAuthor.value = '';
+  metadataDate.value = '';
+  metadataPublisher.value = '';
+  metadataType.value = '';
+  
+  // Fetch the current metadata for this URL if available
+  chrome.runtime.sendMessage({
+    action: 'getPageMetadata',
+    url: selectedPageUrl
+  }, (response) => {
+    if (chrome.runtime.lastError) {
+      console.error(chrome.runtime.lastError);
+      return;
+    }
+    
+    if (response && response.success && response.metadata) {
+      currentPageMetadata = response.metadata;
+      
+      // Fill the form with current values
+      metadataTitle.value = currentPageMetadata.title || '';
+      metadataAuthor.value = currentPageMetadata.author || '';
+      metadataDate.value = currentPageMetadata.publishDate || '';
+      metadataPublisher.value = currentPageMetadata.publisher || '';
+      metadataType.value = currentPageMetadata.contentType || '';
+    }
+    
+    // Show the modal using our modal management system
+    showModal(metadataModal, 'metadata');
+  });
+}
+
+function closeMetadataModal() {
+  hideCurrentModal();
+}
+
+function saveMetadata() {
+  if (!selectedPageUrl) {
+    alert('No page selected.');
+    closeMetadataModal();
+    return;
+  }
+  
+  // Create metadata object
+  const metadata = {
+    title: metadataTitle.value.trim(),
+    author: metadataAuthor.value.trim(),
+    publishDate: metadataDate.value.trim(),
+    publisher: metadataPublisher.value.trim(),
+    contentType: metadataType.value,
+    manuallyEdited: true,
+    editTimestamp: new Date().toISOString()
+  };
+  
+  // Only include fields that have values
+  Object.keys(metadata).forEach(key => {
+    if (!metadata[key] && key !== 'manuallyEdited') {
+      delete metadata[key];
+    }
+  });
+  
+  // Disable the save button and show saving indicator
+  saveMetadataBtn.disabled = true;
+  saveMetadataBtn.textContent = 'Saving...';
+  
+  try {
+    // Save the metadata asynchronously
+    chrome.runtime.sendMessage({
+      action: 'updatePageMetadata',
+      url: selectedPageUrl,
+      metadata
+    }, (response) => {
+      // Check for runtime errors (connection issues)
+      if (chrome.runtime.lastError) {
+        console.error('Error in save metadata:', chrome.runtime.lastError);
+        
+        // Close the modal anyway (fallback)
+        closeMetadataModal();
+        
+        // Show error in a non-blocking way
+        noteTargetEl.textContent = 'Warning: Metadata may not have saved';
+        
+        setTimeout(() => {
+          // Try to refresh status after
+          refreshStatus();
+        }, 1500);
+        
+        return;
+      }
+      
+      // Process normal response
+      if (response && response.success) {
+        // Close the modal
+        closeMetadataModal();
+        
+        // Show success message
+        const originalText = noteTargetEl.textContent;
+        noteTargetEl.textContent = 'Metadata saved successfully';
+        
+        // Reset after a short delay
+        setTimeout(() => {
+          noteTargetEl.textContent = originalText;
+          
+          // Refresh the status to show updated metadata
+          refreshStatus();
+        }, 1500);
+      } else {
+        alert('Error saving metadata: ' + (response && response.error ? response.error : 'Unknown error'));
+        saveMetadataBtn.disabled = false;
+        saveMetadataBtn.textContent = 'Save Metadata';
+      }
+    });
+    
+    // As a fallback, close the modal and update UI after a timeout
+    // This ensures the UI doesn't get stuck even if the messaging fails
+    setTimeout(() => {
+      // Reset the button no matter what
+      saveMetadataBtn.disabled = false;
+      saveMetadataBtn.textContent = 'Save Metadata';
+      
+      if (metadataModal.style.display !== 'none') {
+        // Modal is still open, likely due to response callback not executing
+        console.log('Closing modal via fallback timeout');
+        closeMetadataModal();
+        noteTargetEl.textContent = 'Metadata update attempted';
+        
+        // Try to refresh status
+        setTimeout(refreshStatus, 500);
+      }
+    }, 1500);
+  } catch (e) {
+    console.error('Exception in saveMetadata:', e);
+    closeMetadataModal();
+    alert('Error: ' + e.message);
+  }
 }
 
 // Helper functions

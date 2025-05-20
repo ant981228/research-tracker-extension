@@ -2,16 +2,31 @@
 const STORAGE_KEYS = {
   IS_RECORDING: 'isRecording',
   CURRENT_SESSION: 'currentSession',
-  SESSIONS: 'sessions'
+  SESSIONS: 'sessions',
+  LAST_SAVE_TIMESTAMP: 'lastSaveTimestamp',
+  LAST_ACTIVITY_TIMESTAMP: 'lastActivityTimestamp'
+};
+
+// Alarm names
+const ALARM_NAMES = {
+  KEEP_ALIVE: 'keepAliveAlarm',
+  AUTOSAVE: 'autosaveAlarm',
+  ACTIVITY_CHECK: 'activityCheckAlarm'
 };
 
 // State management
 let isRecording = false;
 let currentSession = null;
+let autosaveInterval = null;
+let activityMonitorInterval = null;
 
 // Rate limiting for adding notes
 let lastNoteTimestamp = 0;
 const NOTE_RATE_LIMIT_MS = 3000; // 3 seconds
+const AUTOSAVE_INTERVAL_MS = 30000; // 30 seconds
+const KEEP_ALIVE_INTERVAL_MS = 25000; // 25 seconds (slightly less than autosave)
+const ACTIVITY_CHECK_INTERVAL_MS = 60000; // 1 minute
+const INACTIVITY_WARNING_THRESHOLD_MS = 5 * 60000; // 5 minutes
 
 // Search engine patterns
 const SEARCH_ENGINES = {
@@ -52,7 +67,49 @@ chrome.runtime.onInstalled.addListener(() => {
       chrome.storage.local.set({ [STORAGE_KEYS.SESSIONS]: [] });
     }
   });
+  
+  // Initialize the activity timestamp
+  updateActivityTimestamp();
 });
+
+// Set up alarm listener - these don't create any visible notifications to users
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === ALARM_NAMES.KEEP_ALIVE) {
+    // This alarm just keeps the service worker alive, no action needed
+    updateActivityTimestamp();
+  } else if (alarm.name === ALARM_NAMES.AUTOSAVE) {
+    if (isRecording && currentSession) {
+      saveCurrentSession();
+    } else {
+      // If we're not recording anymore, clear the alarm
+      chrome.alarms.clear(ALARM_NAMES.AUTOSAVE);
+      chrome.alarms.clear(ALARM_NAMES.KEEP_ALIVE);
+    }
+  } else if (alarm.name === ALARM_NAMES.ACTIVITY_CHECK) {
+    checkActivity();
+    // Continue the alarm as long as we're recording
+    if (!isRecording) {
+      chrome.alarms.clear(ALARM_NAMES.ACTIVITY_CHECK);
+    }
+  }
+});
+
+// Check for interrupted sessions on browser startup
+chrome.runtime.onStartup.addListener(() => {
+  recoverInterruptedSession();
+  updateActivityTimestamp();
+  updateBadge();
+});
+
+// Set the badge color
+chrome.action.setBadgeBackgroundColor({ color: '#4285F4' }); // Google Blue
+
+// Also check when the extension itself starts (handles extension updates/reloads)
+(function initializeExtension() {
+  recoverInterruptedSession();
+  updateActivityTimestamp();
+  updateBadge();
+})();
 
 // Listen for messages from popup
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -77,6 +134,53 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     case 'resumeRecording':
       resumeRecording();
       sendResponse({ success: true, isRecording });
+      break;
+    
+    case 'forceAutosave':
+      if (isRecording && currentSession) {
+        saveCurrentSession();
+      }
+      // No response needed
+      break;
+      
+    case 'checkActivity':
+      // Update the activity timestamp when popup is opened or other events
+      updateActivityTimestamp();
+      checkActivity();
+      sendResponse({ success: true });
+      break;
+      
+    case 'updatePageMetadata':
+      console.log('Received updatePageMetadata message:', message);
+      try {
+        if (isRecording && currentSession && message.url && message.metadata) {
+          const result = updatePageVisitMetadata(message.url, message.metadata);
+          console.log('Metadata update complete, result:', result);
+          sendResponse({ success: true });
+        } else {
+          console.warn('Cannot update metadata:', { isRecording, hasCurrentSession: !!currentSession, hasUrl: !!message.url, hasMetadata: !!message.metadata });
+          sendResponse({ success: false, error: 'Not recording or missing data' });
+        }
+      } catch (e) {
+        console.error('Error updating metadata:', e);
+        sendResponse({ success: false, error: 'Exception: ' + e.message });
+      }
+      return true; // Keep the message channel open for async response
+      break;
+      
+    case 'getPageMetadata':
+      try {
+        if (isRecording && currentSession && message.url) {
+          const metadata = getPageMetadataForUrl(message.url);
+          sendResponse({ success: true, metadata });
+        } else {
+          sendResponse({ success: false, error: 'Not recording or missing URL', metadata: {} });
+        }
+      } catch (e) {
+        console.error('Error in getPageMetadata:', e);
+        sendResponse({ success: false, error: e.message, metadata: {} });
+      }
+      return true; // Keep the message channel open for async response
       break;
     
     case 'getStatus':
@@ -194,11 +298,15 @@ function startRecording(sessionName = '') {
   // Save recording state
   chrome.storage.local.set({ 
     [STORAGE_KEYS.IS_RECORDING]: true,
-    [STORAGE_KEYS.CURRENT_SESSION]: currentSession
+    [STORAGE_KEYS.CURRENT_SESSION]: currentSession,
+    [STORAGE_KEYS.LAST_SAVE_TIMESTAMP]: Date.now()
   });
   
   // Set up listeners
   setupRecordingListeners();
+  
+  // Start autosave
+  startAutosave();
 }
 
 function stopRecording() {
@@ -209,6 +317,12 @@ function stopRecording() {
     }
     
     isRecording = false;
+    
+    // Stop the autosave interval
+    stopAutosave();
+    
+    // Stop the activity monitoring
+    stopActivityMonitoring();
     
     if (currentSession) {
       currentSession.endTime = new Date().toISOString();
@@ -221,7 +335,9 @@ function stopRecording() {
         chrome.storage.local.set({ 
           [STORAGE_KEYS.IS_RECORDING]: false,
           [STORAGE_KEYS.SESSIONS]: sessions,
-          [STORAGE_KEYS.CURRENT_SESSION]: null
+          [STORAGE_KEYS.CURRENT_SESSION]: null,
+          [STORAGE_KEYS.LAST_SAVE_TIMESTAMP]: null,
+          [STORAGE_KEYS.LAST_ACTIVITY_TIMESTAMP]: null
         }, () => {
           // After the session is saved, finalize cleanup
           const savedSession = { ...currentSession };
@@ -229,6 +345,9 @@ function stopRecording() {
           
           // Remove listeners
           removeRecordingListeners();
+          
+          // Clear the badge
+          chrome.action.setBadgeText({ text: '' });
           
           // Resolve with the saved session
           resolve(savedSession);
@@ -244,7 +363,10 @@ function pauseRecording() {
   if (!isRecording || !currentSession) return;
   
   currentSession.isPaused = true;
-  chrome.storage.local.set({ [STORAGE_KEYS.CURRENT_SESSION]: currentSession });
+  chrome.storage.local.set({ 
+    [STORAGE_KEYS.CURRENT_SESSION]: currentSession,
+    [STORAGE_KEYS.LAST_SAVE_TIMESTAMP]: Date.now()
+  });
   
   // We don't change isRecording, just pause event collection
 }
@@ -253,7 +375,175 @@ function resumeRecording() {
   if (!isRecording || !currentSession) return;
   
   currentSession.isPaused = false;
-  chrome.storage.local.set({ [STORAGE_KEYS.CURRENT_SESSION]: currentSession });
+  chrome.storage.local.set({ 
+    [STORAGE_KEYS.CURRENT_SESSION]: currentSession,
+    [STORAGE_KEYS.LAST_SAVE_TIMESTAMP]: Date.now()
+  });
+}
+
+// Autosave functionality using alarms
+function startAutosave() {
+  // Clear any existing alarms first
+  stopAutosave();
+  
+  // Create the autosave alarm
+  chrome.alarms.create(ALARM_NAMES.AUTOSAVE, {
+    periodInMinutes: AUTOSAVE_INTERVAL_MS / (60 * 1000)  // Convert ms to minutes
+  });
+  
+  // Create the keep-alive alarm (runs more frequently to prevent suspension)
+  chrome.alarms.create(ALARM_NAMES.KEEP_ALIVE, {
+    periodInMinutes: KEEP_ALIVE_INTERVAL_MS / (60 * 1000)  // Convert ms to minutes
+  });
+  
+  // Also start the activity monitoring
+  startActivityMonitoring();
+}
+
+function stopAutosave() {
+  // Clear the autosave alarm
+  chrome.alarms.clear(ALARM_NAMES.AUTOSAVE);
+  
+  // Clear the keep-alive alarm
+  chrome.alarms.clear(ALARM_NAMES.KEEP_ALIVE);
+  
+  // For backward compatibility, also clear any existing interval
+  if (autosaveInterval) {
+    clearInterval(autosaveInterval);
+    autosaveInterval = null;
+  }
+}
+
+function saveCurrentSession() {
+  if (!currentSession) return;
+  
+  console.log('Autosaving current session...', new Date().toISOString());
+  
+  chrome.storage.local.set({ 
+    [STORAGE_KEYS.CURRENT_SESSION]: currentSession,
+    [STORAGE_KEYS.LAST_SAVE_TIMESTAMP]: Date.now()
+  }, () => {
+    if (chrome.runtime.lastError) {
+      console.error('Error autosaving session:', chrome.runtime.lastError);
+    }
+  });
+  
+  // Update activity timestamp since we're doing something
+  updateActivityTimestamp();
+}
+
+// Activity monitoring functionality using alarms
+function startActivityMonitoring() {
+  // Clear any existing monitor
+  stopActivityMonitoring();
+  
+  // Set initial badge state
+  updateBadge();
+  
+  // Create the activity check alarm
+  chrome.alarms.create(ALARM_NAMES.ACTIVITY_CHECK, {
+    periodInMinutes: ACTIVITY_CHECK_INTERVAL_MS / (60 * 1000)  // Convert ms to minutes
+  });
+}
+
+function stopActivityMonitoring() {
+  // Clear the activity check alarm
+  chrome.alarms.clear(ALARM_NAMES.ACTIVITY_CHECK);
+  
+  // For backward compatibility, also clear any existing interval
+  if (activityMonitorInterval) {
+    clearInterval(activityMonitorInterval);
+    activityMonitorInterval = null;
+  }
+  
+  // Clear badge when stopping monitoring
+  chrome.action.setBadgeText({ text: '' });
+}
+
+function updateActivityTimestamp() {
+  const now = Date.now();
+  chrome.storage.local.set({ [STORAGE_KEYS.LAST_ACTIVITY_TIMESTAMP]: now });
+  return now;
+}
+
+function checkActivity() {
+  if (!isRecording) {
+    // Not recording, no need to monitor
+    chrome.action.setBadgeText({ text: '' });
+    return;
+  }
+  
+  chrome.storage.local.get([STORAGE_KEYS.LAST_ACTIVITY_TIMESTAMP], (result) => {
+    const lastActivity = result[STORAGE_KEYS.LAST_ACTIVITY_TIMESTAMP] || Date.now();
+    const now = Date.now();
+    const inactiveTime = now - lastActivity;
+    
+    // Update the badge based on inactive time
+    updateBadge(inactiveTime);
+    
+    // Log to console for debugging
+    console.log(`Extension inactive for: ${Math.round(inactiveTime / 1000)} seconds`);
+  });
+}
+
+function updateBadge(inactiveTimeMs = 0) {
+  if (!isRecording) {
+    // Clear badge when not recording
+    chrome.action.setBadgeText({ text: '' });
+    return;
+  }
+  
+  if (inactiveTimeMs > INACTIVITY_WARNING_THRESHOLD_MS) {
+    // Calculate minutes of inactivity
+    const inactiveMinutes = Math.round(inactiveTimeMs / 60000);
+    chrome.action.setBadgeText({ text: `${inactiveMinutes}m` });
+    
+    // Change badge color to red for warning
+    chrome.action.setBadgeBackgroundColor({ color: '#DB4437' }); // Google Red
+  } else {
+    // Recording and active - show "REC"
+    chrome.action.setBadgeText({ text: 'REC' });
+    
+    // Blue for normal recording
+    chrome.action.setBadgeBackgroundColor({ color: '#4285F4' }); // Google Blue
+  }
+}
+
+// Recovery functionality
+function recoverInterruptedSession() {
+  chrome.storage.local.get([
+    STORAGE_KEYS.IS_RECORDING, 
+    STORAGE_KEYS.CURRENT_SESSION,
+    STORAGE_KEYS.LAST_SAVE_TIMESTAMP
+  ], (result) => {
+    // Check if we were recording when the extension crashed/browser closed
+    if (result[STORAGE_KEYS.IS_RECORDING] && result[STORAGE_KEYS.CURRENT_SESSION]) {
+      const savedSession = result[STORAGE_KEYS.CURRENT_SESSION];
+      const lastSaveTime = result[STORAGE_KEYS.LAST_SAVE_TIMESTAMP];
+      
+      // Resume the session
+      isRecording = true;
+      currentSession = savedSession;
+      
+      // Check when the last save was and consider session dead if too old
+      const now = Date.now();
+      const lastSaveAge = now - (lastSaveTime || 0);
+      
+      if (lastSaveAge > 24 * 60 * 60 * 1000) { // 24 hours
+        console.log('Last save was more than 24 hours ago, stopping session automatically');
+        stopRecording();
+        return;
+      }
+      
+      // Start the autosave again using alarms
+      startAutosave();
+      
+      // Setup listeners again
+      setupRecordingListeners();
+      
+      console.log('Recovered interrupted recording session', savedSession.id);
+    }
+  });
 }
 
 // Event listeners
@@ -273,6 +563,10 @@ function handleTabUpdated(tabId, changeInfo, tab) {
   if (!isRecording || !currentSession || currentSession.isPaused) return;
   if (!changeInfo.url) return;
   
+  // Update activity timestamp since we detected user navigation
+  updateActivityTimestamp();
+  updateBadge();
+  
   // Check if this is a search engine
   const isSearchEngine = checkForSearch(tab);
   
@@ -290,6 +584,10 @@ function handleTabUpdated(tabId, changeInfo, tab) {
 function handleNavigationCompleted(details) {
   if (!isRecording || !currentSession || currentSession.isPaused) return;
   if (details.frameId !== 0) return; // Only track main frame
+  
+  // Update activity timestamp since navigation completed
+  updateActivityTimestamp();
+  updateBadge();
   
   // Send message to content script to extract page metadata
   chrome.tabs.get(details.tabId, (tab) => {
@@ -376,7 +674,11 @@ function logSearch(searchData) {
   currentSession.events.push(searchEvent);
   currentSession.searches.push(searchEvent);
   
-  chrome.storage.local.set({ [STORAGE_KEYS.CURRENT_SESSION]: currentSession });
+  // Save to storage and update last save timestamp
+  chrome.storage.local.set({ 
+    [STORAGE_KEYS.CURRENT_SESSION]: currentSession,
+    [STORAGE_KEYS.LAST_SAVE_TIMESTAMP]: Date.now()
+  });
 }
 
 function logPageVisit(visitData) {
@@ -408,20 +710,36 @@ function logPageVisit(visitData) {
   currentSession.events.push(visitEvent);
   currentSession.pageVisits.push(visitEvent);
   
-  chrome.storage.local.set({ [STORAGE_KEYS.CURRENT_SESSION]: currentSession });
+  // Save to storage and update last save timestamp
+  chrome.storage.local.set({ 
+    [STORAGE_KEYS.CURRENT_SESSION]: currentSession,
+    [STORAGE_KEYS.LAST_SAVE_TIMESTAMP]: Date.now()
+  });
 }
 
 function updatePageVisitMetadata(url, metadata) {
   if (!currentSession) return;
   
-  // Find the page visit for this URL (most recent first)
+  console.log('Updating metadata for URL:', url, metadata);
+  let updated = false;
+  
+  // Try to find the URL in page visits
   for (let i = currentSession.pageVisits.length - 1; i >= 0; i--) {
     const visit = currentSession.pageVisits[i];
     if (visit.url === url) {
+      updated = true;
+      console.log('Found URL in page visits at index', i);
+      
+      // Merge with existing metadata if present
+      const mergedMetadata = {
+        ...(visit.metadata || {}),
+        ...metadata
+      };
+      
       // Update with metadata
       currentSession.pageVisits[i] = {
         ...visit,
-        metadata
+        metadata: mergedMetadata
       };
       
       // Also update in events array
@@ -430,16 +748,113 @@ function updatePageVisitMetadata(url, metadata) {
         if (event.type === 'pageVisit' && event.url === url) {
           currentSession.events[j] = {
             ...event,
-            metadata
+            metadata: mergedMetadata
           };
           break;
         }
       }
       
-      chrome.storage.local.set({ [STORAGE_KEYS.CURRENT_SESSION]: currentSession });
       break;
     }
   }
+  
+  // If not found in page visits, try to find in searches
+  if (!updated) {
+    for (let i = currentSession.searches.length - 1; i >= 0; i--) {
+      const search = currentSession.searches[i];
+      if (search.url === url) {
+        updated = true;
+        console.log('Found URL in searches at index', i);
+        
+        // Merge with existing metadata if present
+        const mergedMetadata = {
+          ...(search.metadata || {}),
+          ...metadata
+        };
+        
+        // Update with metadata
+        currentSession.searches[i] = {
+          ...search,
+          metadata: mergedMetadata
+        };
+        
+        // Also update in events array
+        for (let j = currentSession.events.length - 1; j >= 0; j--) {
+          const event = currentSession.events[j];
+          if (event.type === 'search' && event.url === url) {
+            currentSession.events[j] = {
+              ...event,
+              metadata: mergedMetadata
+            };
+            break;
+          }
+        }
+        
+        break;
+      }
+    }
+  }
+  
+  // If still not found, add as a standalone metadata entry
+  if (!updated) {
+    console.log('URL not found in existing records, creating new entry');
+    // Create a new event with this metadata
+    const metadataEvent = {
+      type: 'metadata',
+      url: url,
+      timestamp: new Date().toISOString(),
+      metadata: metadata
+    };
+    
+    // Add to events array
+    currentSession.events.push(metadataEvent);
+  }
+  
+  // Save to storage and update last save timestamp
+  console.log('Saving updated session to storage');
+  chrome.storage.local.set({ 
+    [STORAGE_KEYS.CURRENT_SESSION]: currentSession,
+    [STORAGE_KEYS.LAST_SAVE_TIMESTAMP]: Date.now()
+  });
+  
+  return true; // Indicate success
+}
+
+function getPageMetadataForUrl(url) {
+  if (!currentSession) return {};
+  
+  console.log('Looking for metadata for URL:', url);
+  
+  // Find the page visit for this URL (most recent first)
+  for (let i = currentSession.pageVisits.length - 1; i >= 0; i--) {
+    const visit = currentSession.pageVisits[i];
+    if (visit.url === url) {
+      console.log('Found metadata in page visits:', visit.metadata);
+      return visit.metadata || {};
+    }
+  }
+  
+  // Check in search results too
+  for (let i = currentSession.searches.length - 1; i >= 0; i--) {
+    const search = currentSession.searches[i];
+    if (search.url === url) {
+      console.log('Found metadata in searches:', search.metadata);
+      return search.metadata || {};
+    }
+  }
+  
+  // Check in standalone metadata events
+  for (let i = currentSession.events.length - 1; i >= 0; i--) {
+    const event = currentSession.events[i];
+    if ((event.type === 'metadata' || event.type === 'pageVisit' || event.type === 'search') && 
+        event.url === url && event.metadata) {
+      console.log('Found metadata in events:', event.metadata);
+      return event.metadata;
+    }
+  }
+  
+  console.log('No metadata found for URL:', url);
+  return {};
 }
 
 function addNote(url, note) {
@@ -546,8 +961,11 @@ function addNote(url, note) {
     currentSession.events.push(noteEvent);
   }
   
-  // Save the updated session
-  chrome.storage.local.set({ [STORAGE_KEYS.CURRENT_SESSION]: currentSession });
+  // Save the updated session and update last save timestamp
+  chrome.storage.local.set({ 
+    [STORAGE_KEYS.CURRENT_SESSION]: currentSession,
+    [STORAGE_KEYS.LAST_SAVE_TIMESTAMP]: Date.now()
+  });
 }
 
 // Helper functions
@@ -714,12 +1132,38 @@ async function exportSession(sessionId, format = 'json') {
             text += `   From search: "${visit.sourceSearch.query}" (${visit.sourceSearch.engine})\n`;
           }
           
-          if (visit.metadata && visit.metadata.author) {
-            text += `   Author: ${visit.metadata.author}\n`;
-          }
-          
-          if (visit.metadata && visit.metadata.publishDate) {
-            text += `   Published: ${visit.metadata.publishDate}\n`;
+          // Include all available metadata fields
+          if (visit.metadata) {
+            text += `   Metadata:\n`;
+            
+            if (visit.metadata.title) {
+              text += `   - Title: ${visit.metadata.title}\n`;
+            }
+            
+            if (visit.metadata.author) {
+              text += `   - Author: ${visit.metadata.author}\n`;
+            }
+            
+            if (visit.metadata.publishDate) {
+              text += `   - Published: ${visit.metadata.publishDate}\n`;
+            }
+            
+            if (visit.metadata.publisher) {
+              text += `   - Publisher: ${visit.metadata.publisher}\n`;
+            }
+            
+            if (visit.metadata.contentType) {
+              text += `   - Content Type: ${visit.metadata.contentType}\n`;
+            }
+            
+            if (visit.metadata.description) {
+              text += `   - Description: ${visit.metadata.description}\n`;
+            }
+            
+            // Check for any manually edited flag
+            if (visit.metadata.manuallyEdited) {
+              text += `   - Manually Edited: Yes (${formatTimestamp(visit.metadata.editTimestamp || '')})\n`;
+            }
           }
           
           if (visit.notes && visit.notes.length > 0) {
@@ -738,10 +1182,44 @@ async function exportSession(sessionId, format = 'json') {
           
           if (event.type === 'search') {
             text += `${time} - Search: [${event.engine}] "${event.query}"\n`;
+            
+            // Add any notes for this search event
+            if (event.notes && event.notes.length > 0) {
+              event.notes.forEach(note => {
+                text += `    Note: "${note.content.substring(0, 50)}${note.content.length > 50 ? '...' : ''}" [${formatTimestamp(note.timestamp)}]\n`;
+              });
+            }
           } else if (event.type === 'pageVisit') {
             text += `${time} - Visit: ${event.title || 'Untitled'}\n`;
+            
+            // Add brief metadata summary
+            if (event.metadata) {
+              const metadataParts = [];
+              
+              if (event.metadata.author) metadataParts.push(`Author: ${event.metadata.author}`);
+              if (event.metadata.publishDate) metadataParts.push(`Published: ${event.metadata.publishDate}`);
+              if (event.metadata.publisher) metadataParts.push(`Publisher: ${event.metadata.publisher}`);
+              if (event.metadata.contentType) metadataParts.push(`Type: ${event.metadata.contentType}`);
+              
+              if (metadataParts.length > 0) {
+                text += `    Metadata: ${metadataParts.join(', ')}\n`;
+              }
+            }
+            
+            // Add any notes for this page visit
+            if (event.notes && event.notes.length > 0) {
+              event.notes.forEach(note => {
+                text += `    Note: "${note.content.substring(0, 50)}${note.content.length > 50 ? '...' : ''}" [${formatTimestamp(note.timestamp)}]\n`;
+              });
+            }
           } else if (event.type === 'note') {
             text += `${time} - Note added: "${event.content.substring(0, 50)}${event.content.length > 50 ? '...' : ''}"\n`;
+          } else if (event.type === 'metadata') {
+            // Standalone metadata events
+            text += `${time} - Metadata updated for page: ${event.url}\n`;
+            if (event.metadata && event.metadata.title) {
+              text += `    Title: ${event.metadata.title}\n`;
+            }
           }
         });
         

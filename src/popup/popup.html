@@ -21,7 +21,7 @@
       </div>
       
       <div id="buttons">
-        <button id="start-btn" class="action-btn">Start Recording</button>
+        <button id="start-btn" class="action-btn">Record</button>
         <button id="pause-btn" class="action-btn" disabled>Pause</button>
         <button id="stop-btn" class="action-btn" disabled>Stop</button>
       </div>
@@ -40,21 +40,104 @@
           <div id="current-page" class="page-item selectable"></div>
         </div>
         
-        <div class="status-section">
-          <h4>Recent Content Pages</h4>
-          <div id="recent-pages" class="history-list"></div>
-        </div>
-        
-        <div class="status-section">
-          <h4>Recent Searches</h4>
-          <div id="recent-searches" class="history-list"></div>
+        <div class="action-buttons">
+          <button id="add-note-btn" class="action-btn">Add Note</button>
+          <button id="edit-metadata-btn" class="action-btn">Edit Metadata</button>
+          <button id="view-pages-btn" class="action-btn">View Recent Pages</button>
+          <button id="view-searches-btn" class="action-btn">View Recent Searches</button>
         </div>
       </div>
       
-      <div id="notes-section">
-        <h3>Add Note for <span id="note-target">Current Page</span></h3>
-        <textarea id="note-input" placeholder="Add your observations about this page..."></textarea>
-        <button id="add-note-btn">Add Note</button>
+      <!-- Metadata Edit Modal -->
+      <div id="metadata-modal" class="modal hidden" style="display: none;">
+        <div class="modal-content">
+          <span class="close-modal">&times;</span>
+          <h3>Edit Page Metadata</h3>
+          
+          <div class="form-group">
+            <label for="metadata-title">Title:</label>
+            <input type="text" id="metadata-title" placeholder="Page Title">
+          </div>
+          
+          <div class="form-group">
+            <label for="metadata-author">Author(s):</label>
+            <input type="text" id="metadata-author" placeholder="Author names">
+          </div>
+          
+          <div class="form-group">
+            <label for="metadata-date">Publication Date:</label>
+            <input type="text" id="metadata-date" placeholder="YYYY-MM-DD or as shown">
+          </div>
+          
+          <div class="form-group">
+            <label for="metadata-publisher">Publisher/Source:</label>
+            <input type="text" id="metadata-publisher" placeholder="Publisher or website name">
+          </div>
+          
+          <div class="form-group">
+            <label for="metadata-type">Content Type:</label>
+            <select id="metadata-type">
+              <option value="">-- Select Type --</option>
+              <option value="article">Article</option>
+              <option value="blogpost">Blog Post</option>
+              <option value="news">News</option>
+              <option value="academic">Academic Paper</option>
+              <option value="report">Report</option>
+              <option value="book">Book</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+          
+          <div class="modal-buttons">
+            <button id="save-metadata-btn" class="action-btn">Save Metadata</button>
+            <button id="cancel-metadata-btn" class="action-btn secondary-btn">Cancel</button>
+          </div>
+        </div>
+      </div>
+      
+      <!-- Add Note Modal -->
+      <div id="note-modal" class="modal hidden" style="display: none;">
+        <div class="modal-content">
+          <span class="close-note-modal">&times;</span>
+          <h3>Add Note for <span id="note-target">Current Page</span></h3>
+          
+          <div class="form-group">
+            <textarea id="note-input" placeholder="Add your observations about this page..."></textarea>
+          </div>
+          
+          <div class="modal-buttons">
+            <button id="save-note-btn" class="action-btn">Save Note</button>
+            <button id="cancel-note-btn" class="action-btn secondary-btn">Cancel</button>
+          </div>
+        </div>
+      </div>
+      
+      <!-- Recent Pages Modal -->
+      <div id="pages-modal" class="modal hidden" style="display: none;">
+        <div class="modal-content wide-modal">
+          <span class="close-pages-modal">&times;</span>
+          <h3>Recent Content Pages</h3>
+          
+          <div id="recent-pages" class="history-list modal-list"></div>
+          
+          <div class="modal-buttons">
+            <button id="close-pages-btn" class="action-btn secondary-btn">Close</button>
+          </div>
+        </div>
+      </div>
+      
+      <!-- Recent Searches Modal -->
+      <div id="searches-modal" class="modal hidden" style="display: none;">
+        <div class="modal-content wide-modal">
+          <span class="close-searches-modal">&times;</span>
+          <h3>Recent Searches</h3>
+          
+          <div id="recent-searches" class="history-list modal-list"></div>
+          
+          <div class="modal-buttons">
+            <button id="close-searches-btn" class="action-btn secondary-btn">Close</button>
+          </div>
+        </div>
       </div>
     </div>
     
