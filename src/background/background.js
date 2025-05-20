@@ -4,7 +4,8 @@ const STORAGE_KEYS = {
   CURRENT_SESSION: 'currentSession',
   SESSIONS: 'sessions',
   LAST_SAVE_TIMESTAMP: 'lastSaveTimestamp',
-  LAST_ACTIVITY_TIMESTAMP: 'lastActivityTimestamp'
+  LAST_ACTIVITY_TIMESTAMP: 'lastActivityTimestamp',
+  POPUP_WINDOW_ID: 'popupWindowId'
 };
 
 // Alarm names
@@ -268,6 +269,87 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       getSessions().then(sessions => {
         sendResponse({ success: true, sessions });
       });
+      return true; // Indicates async response
+      
+    case 'getWindowInfo':
+      chrome.storage.local.get([STORAGE_KEYS.POPUP_WINDOW_ID], (result) => {
+        const popupWindowId = result[STORAGE_KEYS.POPUP_WINDOW_ID];
+        
+        console.log('getWindowInfo: stored popup window ID:', popupWindowId);
+        
+        // Check if this window is our popup window
+        chrome.windows.getCurrent((currentWindow) => {
+          if (chrome.runtime.lastError) {
+            console.error('Error getting current window:', chrome.runtime.lastError);
+            sendResponse({ isPopout: false });
+            return;
+          }
+          
+          console.log('Current window ID:', currentWindow.id, 'Popup window ID:', popupWindowId);
+          const isPopout = popupWindowId && currentWindow.id === popupWindowId;
+          console.log('Window is popout:', isPopout);
+          
+          sendResponse({ isPopout });
+        });
+      });
+      return true; // Indicates async response
+      
+    case 'createPopout':
+      console.log('Received createPopout message from popup:', message);
+      
+      try {
+        createPopoutWindow(message.width || 400, message.height || 600)
+          .then((window) => {
+            console.log('createPopoutWindow Promise resolved with window:', window);
+            sendResponse({ success: true, windowId: window.id });
+          })
+          .catch(error => {
+            console.error('Error creating popout window (caught in promise):', error);
+            sendResponse({ 
+              success: false, 
+              error: error.message || 'Unknown error',
+              stack: error.stack
+            });
+          });
+      } catch(error) {
+        console.error('Error starting createPopoutWindow (caught in try/catch):', error);
+        sendResponse({ 
+          success: false, 
+          error: 'Exception before promise: ' + (error.message || 'Unknown error'),
+          stack: error.stack
+        });
+      }
+      
+      console.log('createPopout message handler returning true for async response');
+      return true; // Indicates async response
+      
+    case 'closePopout':
+      console.log('Received closePopout message');
+      
+      try {
+        closePopoutWindow()
+          .then(() => {
+            console.log('Successfully closed popout window');
+            sendResponse({ success: true });
+          })
+          .catch(error => {
+            console.error('Error closing popout window (caught in promise):', error);
+            sendResponse({ 
+              success: false, 
+              error: error.message || 'Unknown error',
+              stack: error.stack
+            });
+          });
+      } catch(error) {
+        console.error('Error in closePopout (caught in try/catch):', error);
+        sendResponse({ 
+          success: false, 
+          error: 'Exception before promise: ' + (error.message || 'Unknown error'),
+          stack: error.stack
+        });
+      }
+      
+      console.log('closePopout message handler returning true for async response');
       return true; // Indicates async response
   }
 });
@@ -1277,3 +1359,126 @@ function formatTimestamp(isoString) {
     return isoString;
   }
 }
+
+// Window management functions
+async function createPopoutWindow(width = 400, height = 600) {
+  console.log('createPopoutWindow called with:', { width, height });
+  
+  try {
+    // Clean up any existing popup window first
+    console.log('Attempting to close any existing popout window...');
+    await closePopoutWindow();
+    console.log('Successfully closed any existing popout window');
+    
+    return new Promise((resolve, reject) => {
+      try {
+        // Try both with and without leading slash to make sure we get the right URL
+        // Remove the leading slash as it might cause issues
+        const popupUrl = chrome.runtime.getURL('src/popup/popup.html');
+        console.log('Creating popup window with URL:', popupUrl);
+        
+        // Just check if we have a URL at all
+        if (!popupUrl) {
+          console.error('Invalid popup URL generated - URL is empty');
+          reject(new Error('Invalid popup URL: empty'));
+          return;
+        }
+        
+        // Create a new popup window
+        console.log('Calling chrome.windows.create...');
+        chrome.windows.create({
+          url: popupUrl,
+          type: 'popup',
+          width: width + 10, // Add a bit of extra padding to avoid scrollbars
+          height: height + 10, // Add a bit of extra padding to avoid scrollbars
+          focused: true
+        }, (window) => {
+          console.log('chrome.windows.create callback received with window:', window);
+          
+          if (chrome.runtime.lastError) {
+            console.error('Error creating window:', chrome.runtime.lastError);
+            reject(chrome.runtime.lastError);
+            return;
+          }
+          
+          if (!window) {
+            console.error('Window creation failed - no window object returned');
+            reject(new Error('No window object returned'));
+            return;
+          }
+          
+          console.log('Popup window created successfully:', window);
+          
+          // Save the window ID to storage
+          console.log('Saving window ID to storage:', window.id);
+          chrome.storage.local.set({
+            [STORAGE_KEYS.POPUP_WINDOW_ID]: window.id
+          }, () => {
+            if (chrome.runtime.lastError) {
+              console.error('Error saving window ID:', chrome.runtime.lastError);
+              reject(chrome.runtime.lastError);
+              return;
+            }
+            
+            console.log('Window ID saved to storage successfully:', window.id);
+            resolve(window);
+          });
+        });
+        console.log('chrome.windows.create call made');
+      } catch (innerError) {
+        console.error('Exception in createPopoutWindow Promise:', innerError);
+        reject(innerError);
+      }
+    });
+  } catch (outerError) {
+    console.error('Exception in createPopoutWindow:', outerError);
+    throw outerError;
+  }
+}
+
+async function closePopoutWindow() {
+  console.log('closePopoutWindow called');
+  
+  return new Promise((resolve, reject) => {
+    try {
+      chrome.storage.local.get([STORAGE_KEYS.POPUP_WINDOW_ID], (result) => {
+        console.log('Retrieved stored popup window ID:', result);
+        const windowId = result[STORAGE_KEYS.POPUP_WINDOW_ID];
+        
+        if (!windowId) {
+          console.log('No popup window ID found in storage, nothing to close');
+          resolve(); // No popup window to close
+          return;
+        }
+        
+        console.log('Attempting to close window with ID:', windowId);
+        chrome.windows.remove(windowId, () => {
+          if (chrome.runtime.lastError) {
+            // Ignore errors about windows that don't exist
+            console.warn('Window removal error:', chrome.runtime.lastError);
+          } else {
+            console.log('Window successfully closed');
+          }
+          
+          // Clear the window ID from storage
+          console.log('Removing window ID from storage');
+          chrome.storage.local.remove([STORAGE_KEYS.POPUP_WINDOW_ID], () => {
+            if (chrome.runtime.lastError) {
+              console.warn('Error removing window ID from storage:', chrome.runtime.lastError);
+            } else {
+              console.log('Window ID successfully removed from storage');
+            }
+            
+            resolve();
+          });
+        });
+      });
+    } catch (error) {
+      console.error('Exception in closePopoutWindow:', error);
+      // Resolve anyway to avoid blocking subsequent operations
+      resolve();
+    }
+  });
+}
+
+// Always-on-top functionality removed as it's not supported by Chrome extensions API

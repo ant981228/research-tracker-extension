@@ -9,7 +9,8 @@
     "webNavigation",
     "scripting",
     "webRequest",
-    "alarms"
+    "alarms",
+    "windows"
   ],
   "host_permissions": [
     "<all_urls>"

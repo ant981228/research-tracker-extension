@@ -17,6 +17,10 @@ let recentSearchesEl;
 let sessionsList;
 let noSessionsMsg;
 
+// Window control elements
+let popoutBtn;
+let isPopout = false;
+
 // Action buttons
 let addNoteBtn;
 let editMetadataBtn;
@@ -152,6 +156,9 @@ function init() {
   sessionsList = document.getElementById('sessions-list');
   noSessionsMsg = document.getElementById('no-sessions-msg');
   
+  // Initialize window control elements
+  popoutBtn = document.getElementById('popout-btn');
+  
   // Initialize metadata modal elements
   metadataModal = document.getElementById('metadata-modal');
   metadataTitle = document.getElementById('metadata-title');
@@ -187,6 +194,29 @@ function init() {
   startBtn.addEventListener('click', startRecording);
   pauseBtn.addEventListener('click', togglePauseRecording);
   stopBtn.addEventListener('click', stopRecording);
+  
+  // Add event listeners for window controls
+  popoutBtn.addEventListener('click', togglePopout);
+  
+  // Check if we're already in a popup window
+  chrome.runtime.sendMessage({ action: 'getWindowInfo' }, (response) => {
+    console.log('getWindowInfo response:', response);
+    
+    if (chrome.runtime.lastError) {
+      console.error('Error checking window info:', chrome.runtime.lastError);
+      return;
+    }
+    
+    if (response && response.isPopout) {
+      console.log('This is a popup window');
+      isPopout = true;
+      popoutBtn.classList.add('active');
+    } else {
+      console.log('This is a regular extension popup');
+      isPopout = false;
+      popoutBtn.classList.remove('active');
+    }
+  });
   
   // Add event listeners for action buttons
   addNoteBtn.addEventListener('click', openNoteModal);
@@ -1245,3 +1275,66 @@ function truncateUrl(url) {
     return url.length > 40 ? url.substring(0, 37) + '...' : url;
   }
 }
+
+// Window control functions
+function togglePopout() {
+  console.log('togglePopout called, isPopout:', isPopout);
+  
+  try {
+    if (isPopout) {
+      console.log('Closing popout window...');
+      // Close the current popup window and reopen as a regular extension popup
+      chrome.runtime.sendMessage({ action: 'closePopout' }, (response) => {
+        console.log('closePopout response:', response);
+        if (chrome.runtime.lastError) {
+          console.error('Error in closePopout response:', chrome.runtime.lastError);
+        }
+        window.close();
+      });
+    } else {
+      console.log('Creating popout window...');
+      // Get the current dimensions of the popup
+      const width = window.innerWidth;
+      const height = window.innerHeight;
+      
+      console.log('Window dimensions:', width, height);
+      console.log('Always on top:', isAlwaysOnTop);
+      
+      // Add visual feedback that button was clicked
+      popoutBtn.classList.add('clicked');
+      
+      // Create a new popup window
+      chrome.runtime.sendMessage({ 
+        action: 'createPopout',
+        width: width + 30, // Add some extra width to prevent horizontal scrollbar
+        height: height + 50 // Add some extra height for window frame
+      }, (response) => {
+        console.log('createPopout callback entered');
+        
+        if (chrome.runtime.lastError) {
+          console.error('Error sending createPopout message:', chrome.runtime.lastError);
+          popoutBtn.classList.remove('clicked');
+          return;
+        }
+        
+        console.log('createPopout response:', response);
+        
+        // Only close if we got a successful response
+        if (response && response.success) {
+          console.log('Closing current popup after successful popout creation');
+          window.close();
+        } else {
+          console.error('Failed to create popout window:', response);
+          popoutBtn.classList.remove('clicked');
+        }
+      });
+      
+      console.log('createPopout message sent');
+    }
+  } catch (err) {
+    console.error('Exception in togglePopout:', err);
+    alert('Error toggling popout: ' + err.message);
+  }
+}
+
+// Always-on-top functionality removed as it's not supported by Chrome extensions API
