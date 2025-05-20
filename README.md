@@ -65,13 +65,6 @@ The extension collects:
 - You control when to start and stop recording
 - Export and delete your data at any time
 
-## Future Development
-
-This extension will be paired with a visualization website that can:
-- Visually represent your research process
-- Match citations in documents to pages visited
-- Provide insights into your research patterns
-
 ## License
 
-[MIT License](LICENSE)
+MIT License
