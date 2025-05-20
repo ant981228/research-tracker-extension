@@ -74,4 +74,4 @@ This extension will be paired with a visualization website that can:
 
 ## License
 
-[MIT License](LICENSE)
+MIT License
