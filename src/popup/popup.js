@@ -195,9 +195,10 @@ function init() {
   pauseBtn.addEventListener('click', togglePauseRecording);
   stopBtn.addEventListener('click', stopRecording);
   
-  // Add event listeners for window controls
-  popoutBtn.addEventListener('click', togglePopout);
+  // Popout functionality removed
+  // popoutBtn.addEventListener('click', togglePopout);
   
+  /* Popout functionality removed
   // Check if we're already in a popup window
   chrome.runtime.sendMessage({ action: 'getWindowInfo' }, (response) => {
     console.log('getWindowInfo response:', response);
@@ -217,6 +218,10 @@ function init() {
       popoutBtn.classList.remove('active');
     }
   });
+  */
+  
+  // Always set to false since popout is disabled
+  isPopout = false;
   
   // Add event listeners for action buttons
   addNoteBtn.addEventListener('click', openNoteModal);
@@ -264,6 +269,9 @@ function init() {
     if (event.target === pagesModal) closePagesModal();
     if (event.target === searchesModal) closeSearchesModal();
   });
+  
+  // Add click handler for session renaming
+  currentSessionName.addEventListener('click', renameCurrentSession);
   
   // Update activity when popup opens
   updateActivityStatus();
@@ -330,8 +338,10 @@ function updateUI(status) {
     sessionStartTime.textContent = startDate.toLocaleString();
     eventCount.textContent = currentSession.events;
     
-    // Display session name
+    // Display session name (clickable for renaming)
     currentSessionName.textContent = currentSession.name;
+    currentSessionName.title = "Click to rename session";
+    currentSessionName.style.cursor = "pointer";
     
     // Update current page and history
     updatePageDisplay(currentUrl);
@@ -402,8 +412,8 @@ function updatePageDisplay(url) {
           });
           currentPageEl.classList.add('selected');
           
-          // Focus the note textarea
-          noteInput.focus();
+          // Open the note modal
+          openNoteModal();
         });
         
         // Set up edit metadata button handler
@@ -707,6 +717,43 @@ function closeSearchesModal() {
 }
 
 // Helper to update recent pages display
+// Function to rename the current active session
+function renameCurrentSession() {
+  if (!isRecording || !currentSession) {
+    return; // Only works when recording is active
+  }
+  
+  const currentName = currentSessionName.textContent;
+  const newName = prompt('Enter a new name for this session:', currentName);
+  
+  if (newName && newName.trim() !== '' && newName !== currentName) {
+    // Temporarily update UI
+    currentSessionName.textContent = newName.trim();
+    
+    // Send request to update the session name
+    chrome.runtime.sendMessage({
+      action: 'renameCurrentSession',
+      newName: newName.trim()
+    }, response => {
+      if (chrome.runtime.lastError) {
+        console.error('Error renaming session:', chrome.runtime.lastError);
+        // Revert to the old name on error
+        currentSessionName.textContent = currentName;
+        return;
+      }
+      
+      if (response && response.success) {
+        console.log('Session renamed successfully');
+        // Name was updated in background.js, no need to update UI here
+      } else {
+        console.error('Failed to rename session:', response);
+        // Revert to the old name
+        currentSessionName.textContent = currentName;
+      }
+    });
+  }
+}
+
 function updateRecentPages(recentPages) {
   // Clear existing elements
   recentPagesEl.innerHTML = '';
@@ -1276,7 +1323,9 @@ function truncateUrl(url) {
   }
 }
 
-// Window control functions
+// Window control functions removed
+
+/* Popout functionality removed 
 function togglePopout() {
   console.log('togglePopout called, isPopout:', isPopout);
   
@@ -1336,5 +1385,4 @@ function togglePopout() {
     alert('Error toggling popout: ' + err.message);
   }
 }
-
-// Always-on-top functionality removed as it's not supported by Chrome extensions API
+*/

@@ -102,8 +102,8 @@ chrome.runtime.onStartup.addListener(() => {
   updateBadge();
 });
 
-// Set the badge color
-chrome.action.setBadgeBackgroundColor({ color: '#4285F4' }); // Google Blue
+// Set the badge color to red
+chrome.action.setBadgeBackgroundColor({ color: '#DB4437' }); // Google Red
 
 // Also check when the extension itself starts (handles extension updates/reloads)
 (function initializeExtension() {
@@ -207,6 +207,27 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           isRecording,
           currentSession: null
         });
+      }
+      break;
+      
+    case 'renameCurrentSession':
+      if (isRecording && currentSession && message.newName) {
+        currentSession.name = message.newName;
+        // Update the current session in storage
+        chrome.storage.local.set({ 
+          [STORAGE_KEYS.CURRENT_SESSION]: currentSession,
+          [STORAGE_KEYS.LAST_SAVE_TIMESTAMP]: Date.now()
+        }, () => {
+          if (chrome.runtime.lastError) {
+            console.error('Error saving renamed session:', chrome.runtime.lastError);
+            sendResponse({ success: false, error: chrome.runtime.lastError.message });
+          } else {
+            sendResponse({ success: true });
+          }
+        });
+        return true; // Indicates async response
+      } else {
+        sendResponse({ success: false, error: 'Not recording or missing new name' });
       }
       break;
       
@@ -586,8 +607,8 @@ function updateBadge(inactiveTimeMs = 0) {
     // Recording and active - show "REC"
     chrome.action.setBadgeText({ text: 'REC' });
     
-    // Blue for normal recording
-    chrome.action.setBadgeBackgroundColor({ color: '#4285F4' }); // Google Blue
+    // Red for normal recording
+    chrome.action.setBadgeBackgroundColor({ color: '#DB4437' }); // Google Red
   }
 }
 

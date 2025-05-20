@@ -94,6 +94,19 @@ h2 {
   margin-bottom: 8px;
 }
 
+/* Make current session name look clickable like saved sessions */
+#current-session-name {
+  color: #2980b9;
+  padding: 2px 4px;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+#current-session-name:hover {
+  background-color: #f0f0f0;
+  text-decoration: underline;
+}
+
 h3 {
   color: #34495e;
   font-size: 14px;
