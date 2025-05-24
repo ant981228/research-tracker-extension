@@ -58,42 +58,60 @@
       
       <!-- Metadata Edit Modal -->
       <div id="metadata-modal" class="modal hidden" style="display: none;">
-        <div class="modal-content">
+        <div class="modal-content wide-modal">
           <span class="close-modal">&times;</span>
           <h3>Edit Page Metadata</h3>
           
-          <div class="form-group">
-            <label for="metadata-title">Title:</label>
-            <input type="text" id="metadata-title" placeholder="Page Title">
-          </div>
-          
-          <div class="form-group">
-            <label for="metadata-author">Author(s):</label>
-            <input type="text" id="metadata-author" placeholder="Author names">
-          </div>
-          
-          <div class="form-group">
-            <label for="metadata-date">Publication Date:</label>
-            <input type="text" id="metadata-date" placeholder="YYYY-MM-DD or as shown">
-          </div>
-          
-          <div class="form-group">
-            <label for="metadata-publisher">Publisher/Source:</label>
-            <input type="text" id="metadata-publisher" placeholder="Publisher or website name">
-          </div>
-          
-          <div class="form-group">
-            <label for="metadata-type">Content Type:</label>
-            <select id="metadata-type">
-              <option value="">-- Select Type --</option>
-              <option value="article">Article</option>
-              <option value="blogpost">Blog Post</option>
-              <option value="news">News</option>
-              <option value="academic">Academic Paper</option>
-              <option value="report">Report</option>
-              <option value="book">Book</option>
-              <option value="other">Other</option>
-            </select>
+          <div class="metadata-form-grid">
+            <div class="form-group full-width">
+              <label for="metadata-title">Title:</label>
+              <input type="text" id="metadata-title" placeholder="Page Title">
+            </div>
+            
+            <div class="form-group">
+              <label for="metadata-author">Author(s):</label>
+              <input type="text" id="metadata-author" placeholder="Author names (comma-separated if multiple)">
+            </div>
+            
+            <div class="form-group">
+              <label for="metadata-date">Publication Date:</label>
+              <input type="text" id="metadata-date" placeholder="YYYY-MM-DD or as shown">
+            </div>
+            
+            <div class="form-group">
+              <label for="metadata-publisher">Publisher/Source:</label>
+              <input type="text" id="metadata-publisher" placeholder="Publisher or website name">
+            </div>
+            
+            <div class="form-group">
+              <label for="metadata-journal">Journal:</label>
+              <input type="text" id="metadata-journal" placeholder="Journal name (if applicable)">
+            </div>
+            
+            <div class="form-group">
+              <label for="metadata-doi">DOI:</label>
+              <input type="text" id="metadata-doi" placeholder="10.xxxx/xxxxx">
+            </div>
+            
+            <div class="form-group">
+              <label for="metadata-type">Content Type:</label>
+              <select id="metadata-type">
+                <option value="">-- Select Type --</option>
+                <option value="journal-article">Journal Article</option>
+                <option value="preprint">Preprint</option>
+                <option value="news-article">News Article</option>
+                <option value="report">Report</option>
+                <option value="book">Book</option>
+                <option value="encyclopedia-article">Encyclopedia Article</option>
+                <option value="social-media-post">Social Media Post</option>
+                <option value="website">Website</option>
+                <option value="other">Other</option>
+              </select>
+            </div>
+            
+            <div class="form-group full-width" id="metadata-info">
+              <!-- Dynamic info about extraction method will be inserted here -->
+            </div>
           </div>
           
           <div class="modal-buttons">

@@ -7,6 +7,93 @@ const SEARCH_EXTRACTORS = {
   GOOGLE_NEWS: extractGoogleNewsResults
 };
 
+// Site-specific metadata extractors
+const SITE_SPECIFIC_EXTRACTORS = {
+  // Academic and research sites
+  'arxiv.org': extractArxivMetadata,
+  'pubmed.ncbi.nlm.nih.gov': extractPubMedMetadata,
+  'ncbi.nlm.nih.gov': extractPubMedMetadata,
+  'jstor.org': extractJstorMetadata,
+  'www.jstor.org': extractJstorMetadata,
+  'doi.org': extractDoiMetadata,
+  
+  // News sites
+  'nytimes.com': extractNYTimesMetadata,
+  'www.nytimes.com': extractNYTimesMetadata,
+  'washingtonpost.com': extractWashingtonPostMetadata,
+  'www.washingtonpost.com': extractWashingtonPostMetadata,
+  'wsj.com': extractWSJMetadata,
+  'www.wsj.com': extractWSJMetadata,
+  'theguardian.com': extractGuardianMetadata,
+  'www.theguardian.com': extractGuardianMetadata,
+  'bbc.com': extractBBCMetadata,
+  'www.bbc.com': extractBBCMetadata,
+  'cnn.com': extractCNNMetadata,
+  'www.cnn.com': extractCNNMetadata,
+  
+  // Academic publishers
+  'sciencedirect.com': extractScienceDirectMetadata,
+  'www.sciencedirect.com': extractScienceDirectMetadata,
+  'nature.com': extractNatureMetadata,
+  'www.nature.com': extractNatureMetadata,
+  'springer.com': extractSpringerMetadata,
+  'link.springer.com': extractSpringerMetadata,
+  'wiley.com': extractWileyMetadata,
+  'onlinelibrary.wiley.com': extractWileyMetadata,
+  
+  // Social media and forums
+  'reddit.com': extractRedditMetadata,
+  'www.reddit.com': extractRedditMetadata,
+  'twitter.com': extractTwitterMetadata,
+  'x.com': extractTwitterMetadata,
+  
+  // Think tanks and research organizations
+  'brookings.edu': extractBrookingsMetadata,
+  'www.brookings.edu': extractBrookingsMetadata,
+  'rand.org': extractRandMetadata,
+  'www.rand.org': extractRandMetadata,
+  'pewresearch.org': extractPewMetadata,
+  'www.pewresearch.org': extractPewMetadata,
+  'cato.org': extractCatoMetadata,
+  'www.cato.org': extractCatoMetadata,
+  'carnegieendowment.org': extractCarnegieMetadata,
+  'www.carnegieendowment.org': extractCarnegieMetadata,
+  'heritage.org': extractHeritageMetadata,
+  'www.heritage.org': extractHeritageMetadata,
+  'urban.org': extractUrbanMetadata,
+  'www.urban.org': extractUrbanMetadata,
+  'taxpolicycenter.org': extractTaxPolicyCenterMetadata,
+  'www.taxpolicycenter.org': extractTaxPolicyCenterMetadata,
+  'americanprogress.org': extractAmericanProgressMetadata,
+  'www.americanprogress.org': extractAmericanProgressMetadata,
+  'atlanticcouncil.org': extractAtlanticCouncilMetadata,
+  'www.atlanticcouncil.org': extractAtlanticCouncilMetadata,
+  'hudson.org': extractHudsonMetadata,
+  'www.hudson.org': extractHudsonMetadata,
+  'cnas.org': extractCNASMetadata,
+  'www.cnas.org': extractCNASMetadata,
+  'bakerinstitute.org': extractBakerInstituteMetadata,
+  'www.bakerinstitute.org': extractBakerInstituteMetadata,
+  'rff.org': extractRFFMetadata,
+  'www.rff.org': extractRFFMetadata,
+  'resources.org': extractRFFMetadata,
+  'www.resources.org': extractRFFMetadata,
+  'hoover.org': extractHooverMetadata,
+  'www.hoover.org': extractHooverMetadata,
+  
+  // Wikipedia
+  'wikipedia.org': extractWikipediaMetadata,
+  'en.wikipedia.org': extractWikipediaMetadata,
+  
+  // Other research sites
+  'arcticresearch.wordpress.com': extractArcticResearchMetadata,
+  'arctic-news.blogspot.com': extractArcticNewsMetadata,
+  
+  // News sites (additional)
+  'news.mongabay.com': extractMongabayMetadata,
+  'highnorthnews.com': extractHighNorthNewsMetadata
+};
+
 // Listen for messages from background script
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   switch (message.action) {
@@ -40,26 +127,74 @@ function extractPageMetadata() {
       timestamp: new Date().toISOString()
     };
     
-    // Enhanced title extraction - try multiple strategies
-    metadata.title = extractPageTitle();
+    // Check if we have a site-specific extractor for this domain
+    const hostname = window.location.hostname;
+    let siteExtractor = SITE_SPECIFIC_EXTRACTORS[hostname];
     
-    // Try to get author information (enhanced)
-    metadata.author = extractAuthor();
-    
-    // Try to get publication date (enhanced)
-    metadata.publishDate = extractPublicationDate();
-    
-    // Try to get description
-    const descMeta = document.querySelector('meta[name="description"], meta[property="og:description"]');
-    if (descMeta) {
-      metadata.description = descMeta.getAttribute('content');
+    // Special case for Wiley subsidiaries (e.g., agupubs.onlinelibrary.wiley.com)
+    if (!siteExtractor && hostname.endsWith('.onlinelibrary.wiley.com')) {
+      siteExtractor = extractWileyMetadata;
     }
     
-    // Try to extract schema.org metadata
-    extractSchemaMetadata(metadata);
+    // Special case for CSIS subsidiaries (e.g., beyondparallel.csis.org)
+    if (!siteExtractor && (hostname === 'csis.org' || hostname.endsWith('.csis.org'))) {
+      siteExtractor = extractCSISMetadata;
+    }
     
-    // Try to extract Open Graph or Twitter card metadata
-    extractSocialMediaMetadata(metadata);
+    if (siteExtractor) {
+      console.log(`Using site-specific extractor for ${hostname}`);
+      try {
+        // Run the site-specific extractor
+        const siteMetadata = siteExtractor();
+        
+        // Merge site-specific metadata with base metadata
+        Object.assign(metadata, siteMetadata);
+        
+        // If site-specific extractor didn't get certain fields, try generic extractors
+        if (!metadata.title) {
+          metadata.title = extractPageTitle();
+        }
+        if (!metadata.author && !metadata.authors) {
+          metadata.author = extractAuthor();
+        }
+        if (!metadata.publishDate) {
+          metadata.publishDate = extractPublicationDate();
+        }
+        
+        // Mark that we used a site-specific extractor
+        metadata.extractorType = 'site-specific';
+        metadata.extractorSite = hostname;
+      } catch (e) {
+        console.error(`Site-specific extractor failed for ${hostname}:`, e);
+        // Fall back to generic extraction
+      }
+    }
+    
+    // If no site-specific extractor or it failed, use generic extraction
+    if (!metadata.extractorType) {
+      // Enhanced title extraction - try multiple strategies
+      metadata.title = extractPageTitle();
+      
+      // Try to get author information (enhanced)
+      metadata.author = extractAuthor();
+      
+      // Try to get publication date (enhanced)
+      metadata.publishDate = extractPublicationDate();
+      
+      // Try to get description
+      const descMeta = document.querySelector('meta[name="description"], meta[property="og:description"]');
+      if (descMeta) {
+        metadata.description = descMeta.getAttribute('content');
+      }
+      
+      // Try to extract schema.org metadata
+      extractSchemaMetadata(metadata);
+      
+      // Try to extract Open Graph or Twitter card metadata
+      extractSocialMediaMetadata(metadata);
+      
+      metadata.extractorType = 'generic';
+    }
     
     console.log('Extracted metadata:', metadata);
     return metadata;
@@ -69,7 +204,8 @@ function extractPageMetadata() {
       error: e.message,
       url: window.location.href,
       timestamp: new Date().toISOString(),
-      title: document.title || ''
+      title: document.title || '',
+      extractorType: 'error'
     };
   }
 }
@@ -1045,3 +1181,2240 @@ document.addEventListener('click', (event) => {
     target = target.parentNode;
   }
 });
+
+// Site-specific metadata extractors
+
+// arXiv extractor
+function extractArxivMetadata() {
+  const metadata = {};
+  
+  try {
+    // Extract arXiv ID from URL
+    const arxivIdMatch = window.location.href.match(/arxiv\.org\/(?:abs|pdf)\/(\d+\.\d+)/);
+    if (arxivIdMatch) {
+      metadata.arxivId = arxivIdMatch[1];
+      metadata.citationKey = `arxiv:${arxivIdMatch[1]}`;
+    }
+    
+    // Extract arXiv ID from citation meta tag (alternative method)
+    const citationArxivEl = document.querySelector('meta[name="citation_arxiv_id"]');
+    if (citationArxivEl && citationArxivEl.getAttribute('content')) {
+      const arxivId = citationArxivEl.getAttribute('content');
+      metadata.arxivId = arxivId;
+      metadata.citationKey = `arxiv:${arxivId}`;
+      // For arXiv papers, we can construct a DOI-like identifier
+      metadata.doi = `10.48550/arXiv.${arxivId}`;
+    }
+    
+    // Title - arXiv has it in a specific h1 class
+    const titleEl = document.querySelector('h1.title');
+    if (titleEl) {
+      metadata.title = titleEl.textContent.replace(/^Title:\s*/i, '').trim();
+    }
+    
+    // Authors - arXiv lists them in a specific div
+    const authorsEl = document.querySelector('.authors');
+    if (authorsEl) {
+      const authors = Array.from(authorsEl.querySelectorAll('a')).map(a => a.textContent.trim());
+      metadata.author = authors.join(', ');
+      metadata.authors = authors; // Also store as array
+    }
+    
+    // Abstract
+    const abstractEl = document.querySelector('.abstract');
+    if (abstractEl) {
+      metadata.abstract = abstractEl.textContent.replace(/^Abstract:\s*/i, '').trim();
+      metadata.description = metadata.abstract; // Also use as description
+    }
+    
+    // Submission date
+    const datelineEl = document.querySelector('.dateline');
+    if (datelineEl) {
+      const dateMatch = datelineEl.textContent.match(/Submitted on (\d{1,2} \w+ \d{4})/);
+      if (dateMatch) {
+        metadata.publishDate = dateMatch[1];
+      }
+    }
+    
+    // Subject categories
+    const subjectsEl = document.querySelector('.subjects');
+    if (subjectsEl) {
+      metadata.subjects = subjectsEl.textContent.trim();
+      metadata.categories = metadata.subjects; // Alternative name
+    }
+    
+    // PDF link
+    const pdfLink = document.querySelector('.download-pdf');
+    if (pdfLink) {
+      metadata.pdfUrl = pdfLink.href;
+    }
+    
+    // Content type
+    metadata.contentType = 'preprint';
+    metadata.publisher = 'arXiv';
+    
+  } catch (e) {
+    console.error('Error in arXiv extractor:', e);
+  }
+  
+  return metadata;
+}
+
+// PubMed/NCBI extractor
+function extractPubMedMetadata() {
+  const metadata = {};
+  
+  try {
+    // PMID
+    const pmidMatch = window.location.href.match(/pubmed\/(\d+)/);
+    if (pmidMatch) {
+      metadata.pmid = pmidMatch[1];
+      metadata.citationKey = `pmid:${pmidMatch[1]}`;
+    }
+    
+    // Title
+    const titleEl = document.querySelector('h1.heading-title, .abstract h3');
+    if (titleEl) {
+      metadata.title = titleEl.textContent.trim();
+    }
+    
+    // Authors - try citation meta tag first
+    const citationAuthorsEl = document.querySelector('meta[name="citation_authors"]');
+    if (citationAuthorsEl && citationAuthorsEl.getAttribute('content')) {
+      const authorsContent = citationAuthorsEl.getAttribute('content');
+      // Split by semicolon and clean up
+      const authors = authorsContent.split(';').map(author => author.trim()).filter(author => author);
+      metadata.authors = authors;
+      metadata.author = authors.join(', ');
+    } else {
+      // Fallback to DOM selectors
+      const authorsEl = document.querySelector('.authors-list, .auths');
+      if (authorsEl) {
+        const authors = Array.from(authorsEl.querySelectorAll('a[class*="author"]')).map(a => a.textContent.trim());
+        metadata.author = authors.join(', ');
+        metadata.authors = authors;
+      }
+    }
+    
+    // Journal information - try citation meta tag first
+    const citationJournalEl = document.querySelector('meta[name="citation_journal_title"]');
+    if (citationJournalEl && citationJournalEl.getAttribute('content')) {
+      metadata.journal = citationJournalEl.getAttribute('content');
+    } else {
+      // Fallback to DOM selector
+      const citationEl = document.querySelector('.cit');
+      if (citationEl) {
+        metadata.journal = citationEl.textContent.trim();
+      }
+    }
+    
+    // Try to extract publication date from citation element
+    const citationEl = document.querySelector('.cit');
+    if (citationEl) {
+      const dateMatch = citationEl.textContent.match(/(\d{4})\s+\w+/);
+      if (dateMatch) {
+        metadata.publishDate = dateMatch[0];
+      }
+    }
+    
+    // Abstract
+    const abstractEl = document.querySelector('.abstract-content, div[id*="abstract"]');
+    if (abstractEl) {
+      metadata.abstract = abstractEl.textContent.trim();
+      metadata.description = metadata.abstract;
+    }
+    
+    // DOI
+    const doiEl = document.querySelector('.doi a, .citation-doi');
+    if (doiEl) {
+      metadata.doi = doiEl.textContent.trim();
+    }
+    
+    // Content type
+    metadata.contentType = 'journal-article';
+    metadata.publisher = 'PubMed';
+    
+  } catch (e) {
+    console.error('Error in PubMed extractor:', e);
+  }
+  
+  return metadata;
+}
+
+// JSTOR extractor
+function extractJstorMetadata() {
+  const metadata = {};
+  
+  try {
+    // JSTOR stable URL/ID
+    const stableUrlMatch = window.location.href.match(/stable\/(\d+)/);
+    if (stableUrlMatch) {
+      metadata.jstorId = stableUrlMatch[1];
+      metadata.citationKey = `jstor:${stableUrlMatch[1]}`;
+    }
+    
+    // Get title from page title and clean it
+    let cleanTitle = document.title || '';
+    // Remove " on JSTOR" suffix if present
+    cleanTitle = cleanTitle.replace(/\s+on\s+JSTOR\s*$/i, '').trim();
+    
+    // Parse description meta tags to find citation information
+    const descriptionTags = document.querySelectorAll('meta[name="description"]');
+    let citationData = null;
+    
+    for (const tag of descriptionTags) {
+      const content = tag.getAttribute('content');
+      if (content && cleanTitle && content.includes(cleanTitle)) {
+        citationData = content;
+        break;
+      }
+    }
+    
+    if (citationData) {
+      // Parse the citation format: "Author(s), Title, Journal, Vol. X, No. Y (Date), pp. Z-W"
+      metadata.citation = citationData;
+      
+      // Find the title position in the citation
+      const titleIndex = citationData.indexOf(cleanTitle);
+      if (titleIndex > 0) {
+        // Extract authors (everything before the title)
+        const authorsText = citationData.substring(0, titleIndex).trim();
+        if (authorsText.endsWith(',')) {
+          const authors = authorsText.slice(0, -1).split(',').map(a => a.trim()).filter(a => a);
+          metadata.authors = authors;
+          metadata.author = authors.join(', ');
+        }
+        
+        // Extract everything after the title
+        const afterTitle = citationData.substring(titleIndex + cleanTitle.length).trim();
+        if (afterTitle.startsWith(',')) {
+          const remainder = afterTitle.slice(1).trim();
+          
+          // Parse journal and other info: "Journal, Vol. X, No. Y (Date), pp. Z-W"
+          const parts = remainder.split(',');
+          if (parts.length > 0) {
+            metadata.journal = parts[0].trim();
+          }
+          
+          // Extract publication date from parentheses
+          const dateMatch = remainder.match(/\(([^)]+)\)/);
+          if (dateMatch) {
+            metadata.publishDate = dateMatch[1];
+          }
+          
+          // Extract page numbers
+          const pageMatch = remainder.match(/pp\.\s*(\d+[-–]\d+)/);
+          if (pageMatch) {
+            metadata.pages = pageMatch[1];
+          }
+          
+          // Extract volume and issue
+          const volMatch = remainder.match(/Vol\.\s*(\d+)/);
+          if (volMatch) {
+            metadata.volume = volMatch[1];
+          }
+          
+          const issueMatch = remainder.match(/No\.\s*(\d+)/);
+          if (issueMatch) {
+            metadata.issue = issueMatch[1];
+          }
+        }
+      }
+      
+      metadata.title = cleanTitle;
+    } else {
+      // Fallback to existing methods if citation parsing fails
+      metadata.title = cleanTitle;
+      
+      // Use existing structured data which JSTOR provides well
+      const ldJsonScripts = document.querySelectorAll('script[type="application/ld+json"]');
+      for (const script of ldJsonScripts) {
+        try {
+          const data = JSON.parse(script.textContent);
+          if (data['@type'] === 'ScholarlyArticle' || data['@type'] === 'Article') {
+            if (data.headline && !metadata.title) metadata.title = data.headline;
+            if (data.author && !metadata.author) {
+              if (Array.isArray(data.author)) {
+                metadata.authors = data.author.map(a => a.name || a);
+                metadata.author = metadata.authors.join(', ');
+              } else if (data.author.name) {
+                metadata.author = data.author.name;
+              }
+            }
+            if (data.datePublished && !metadata.publishDate) metadata.publishDate = data.datePublished;
+            if (data.publisher && !metadata.publisher) metadata.publisher = data.publisher.name || data.publisher;
+            if (data.description && !metadata.description) metadata.description = data.description;
+          }
+        } catch (e) {
+          // Continue with next script
+        }
+      }
+    }
+    
+    metadata.contentType = 'journal-article';
+    if (!metadata.publisher) metadata.publisher = 'JSTOR';
+    
+  } catch (e) {
+    console.error('Error in JSTOR extractor:', e);
+  }
+  
+  return metadata;
+}
+
+// DOI.org extractor
+function extractDoiMetadata() {
+  const metadata = {};
+  
+  try {
+    // Extract DOI from URL
+    const doiMatch = window.location.href.match(/doi\.org\/(10\.\d+\/[^\s]+)/);
+    if (doiMatch) {
+      metadata.doi = doiMatch[1];
+      metadata.citationKey = `doi:${doiMatch[1]}`;
+    }
+    
+    // DOI.org is usually a redirect service, but sometimes shows metadata
+    // Try to get any displayed metadata
+    const metaContainer = document.querySelector('.metadata, .citation');
+    if (metaContainer) {
+      metadata.citation = metaContainer.textContent.trim();
+    }
+    
+    metadata.contentType = 'academic-article';
+    
+  } catch (e) {
+    console.error('Error in DOI extractor:', e);
+  }
+  
+  return metadata;
+}
+
+// New York Times extractor
+function extractNYTimesMetadata() {
+  const metadata = {};
+  
+  try {
+    // NYTimes has good structured data
+    const ldJsonScripts = document.querySelectorAll('script[type="application/ld+json"]');
+    for (const script of ldJsonScripts) {
+      try {
+        const data = JSON.parse(script.textContent);
+        if (data['@type'] === 'NewsArticle') {
+          if (data.headline) metadata.title = data.headline;
+          if (data.author) {
+            if (Array.isArray(data.author)) {
+              metadata.authors = data.author.map(a => a.name || a);
+              metadata.author = metadata.authors.join(', ');
+            } else if (data.author.name) {
+              metadata.author = data.author.name;
+            }
+          }
+          if (data.datePublished) metadata.publishDate = data.datePublished;
+          if (data.description) metadata.description = data.description;
+        }
+      } catch (e) {
+        // Continue with next script
+      }
+    }
+    
+    // Section/Category
+    const sectionEl = document.querySelector('[data-testid="section-link"], .section-name');
+    if (sectionEl) {
+      metadata.section = sectionEl.textContent.trim();
+    }
+    
+    // Paywall status
+    const paywallEl = document.querySelector('[data-testid="paywall"]');
+    metadata.hasPaywall = !!paywallEl;
+    
+    metadata.contentType = 'news-article';
+    metadata.publisher = 'The New York Times';
+    
+  } catch (e) {
+    console.error('Error in NYTimes extractor:', e);
+  }
+  
+  return metadata;
+}
+
+// Washington Post extractor
+function extractWashingtonPostMetadata() {
+  const metadata = {};
+  
+  try {
+    // Title
+    const titleEl = document.querySelector('h1[data-qa="headline"], h1.headline');
+    if (titleEl) {
+      metadata.title = titleEl.textContent.trim();
+    }
+    
+    // Author
+    const authorEl = document.querySelector('[data-qa="author-name"], .author-name');
+    if (authorEl) {
+      metadata.author = authorEl.textContent.trim();
+    }
+    
+    // Publication date
+    const dateEl = document.querySelector('[data-qa="display-date"], .display-date');
+    if (dateEl) {
+      metadata.publishDate = dateEl.textContent.trim();
+    }
+    
+    // Section
+    const sectionEl = document.querySelector('[data-qa="kicker"], .kicker');
+    if (sectionEl) {
+      metadata.section = sectionEl.textContent.trim();
+    }
+    
+    metadata.contentType = 'news-article';
+    metadata.publisher = 'The Washington Post';
+    
+  } catch (e) {
+    console.error('Error in Washington Post extractor:', e);
+  }
+  
+  return metadata;
+}
+
+// Wall Street Journal extractor
+function extractWSJMetadata() {
+  const metadata = {};
+  
+  try {
+    // WSJ often has structured data
+    const ldJsonEl = document.querySelector('script[type="application/ld+json"]');
+    if (ldJsonEl) {
+      try {
+        const data = JSON.parse(ldJsonEl.textContent);
+        if (data.headline) metadata.title = data.headline;
+        if (data.author) metadata.author = data.author.name || data.author;
+        if (data.datePublished) metadata.publishDate = data.datePublished;
+        if (data.description) metadata.description = data.description;
+      } catch (e) {
+        // Fallback to DOM parsing
+      }
+    }
+    
+    // Article type/section
+    const typeEl = document.querySelector('.article-type, [class*="article-type"]');
+    if (typeEl) {
+      metadata.articleType = typeEl.textContent.trim();
+    }
+    
+    metadata.contentType = 'news-article';
+    metadata.publisher = 'The Wall Street Journal';
+    metadata.hasPaywall = true; // WSJ typically has paywall
+    
+  } catch (e) {
+    console.error('Error in WSJ extractor:', e);
+  }
+  
+  return metadata;
+}
+
+// Guardian extractor
+function extractGuardianMetadata() {
+  const metadata = {};
+  
+  try {
+    // Guardian has excellent structured data
+    const ldJsonScripts = document.querySelectorAll('script[type="application/ld+json"]');
+    for (const script of ldJsonScripts) {
+      try {
+        const data = JSON.parse(script.textContent);
+        if (data['@type'] === 'NewsArticle' || data['@type'] === 'Article') {
+          if (data.headline) metadata.title = data.headline;
+          if (data.author) {
+            if (Array.isArray(data.author)) {
+              metadata.authors = data.author.map(a => a.name || a);
+              metadata.author = metadata.authors.join(', ');
+            } else {
+              metadata.author = data.author.name || data.author;
+            }
+          }
+          if (data.datePublished) metadata.publishDate = data.datePublished;
+          if (data.description) metadata.description = data.description;
+        }
+      } catch (e) {
+        // Continue
+      }
+    }
+    
+    // Section/Tags
+    const sectionEl = document.querySelector('[data-link-name="article section"]');
+    if (sectionEl) {
+      metadata.section = sectionEl.textContent.trim();
+    }
+    
+    // Tags
+    const tags = Array.from(document.querySelectorAll('a[rel="tag"]')).map(t => t.textContent.trim());
+    if (tags.length > 0) {
+      metadata.tags = tags;
+    }
+    
+    metadata.contentType = 'news-article';
+    metadata.publisher = 'The Guardian';
+    
+  } catch (e) {
+    console.error('Error in Guardian extractor:', e);
+  }
+  
+  return metadata;
+}
+
+// BBC extractor
+function extractBBCMetadata() {
+  const metadata = {};
+  
+  try {
+    // Title - BBC uses various selectors
+    const titleEl = document.querySelector('h1[id*="main-heading"], h1.story-body__h1');
+    if (titleEl) {
+      metadata.title = titleEl.textContent.trim();
+    }
+    
+    // Publication date
+    const dateEl = document.querySelector('time[datetime], .date');
+    if (dateEl) {
+      if (dateEl.getAttribute('datetime')) {
+        metadata.publishDate = dateEl.getAttribute('datetime');
+      } else {
+        metadata.publishDate = dateEl.textContent.trim();
+      }
+    }
+    
+    // Section
+    const sectionEl = document.querySelector('.navigation-wide-list__link--current, [class*="section"]');
+    if (sectionEl) {
+      metadata.section = sectionEl.textContent.trim();
+    }
+    
+    // Author (BBC often doesn't show authors prominently)
+    const authorEl = document.querySelector('.byline__name, [class*="author"]');
+    if (authorEl) {
+      metadata.author = authorEl.textContent.trim();
+    }
+    
+    metadata.contentType = 'news-article';
+    metadata.publisher = 'BBC';
+    
+  } catch (e) {
+    console.error('Error in BBC extractor:', e);
+  }
+  
+  return metadata;
+}
+
+// CNN extractor
+function extractCNNMetadata() {
+  const metadata = {};
+  
+  try {
+    // CNN structured data
+    const ldJsonEl = document.querySelector('script[type="application/ld+json"]');
+    if (ldJsonEl) {
+      try {
+        const data = JSON.parse(ldJsonEl.textContent);
+        if (data.headline) metadata.title = data.headline;
+        if (data.author) metadata.author = data.author.name || data.author;
+        if (data.datePublished) metadata.publishDate = data.datePublished;
+        if (data.description) metadata.description = data.description;
+      } catch (e) {
+        // Fallback to DOM
+      }
+    }
+    
+    // Section/Category
+    const sectionEl = document.querySelector('.metadata__section, [class*="section"]');
+    if (sectionEl) {
+      metadata.section = sectionEl.textContent.trim();
+    }
+    
+    // Updated timestamp
+    const updatedEl = document.querySelector('.update-time');
+    if (updatedEl) {
+      metadata.lastUpdated = updatedEl.textContent.trim();
+    }
+    
+    metadata.contentType = 'news-article';
+    metadata.publisher = 'CNN';
+    
+  } catch (e) {
+    console.error('Error in CNN extractor:', e);
+  }
+  
+  return metadata;
+}
+
+// ScienceDirect extractor
+function extractScienceDirectMetadata() {
+  const metadata = {};
+  
+  try {
+    // Article title
+    const titleEl = document.querySelector('h1.title-text, .title-text');
+    if (titleEl) {
+      metadata.title = titleEl.textContent.trim();
+    }
+    
+    // Authors - extract from given-name and surname spans
+    const authorContainers = document.querySelectorAll('.react-xocs-alternative-link');
+    if (authorContainers.length > 0) {
+      const authors = [];
+      authorContainers.forEach(container => {
+        const givenName = container.querySelector('.given-name');
+        const surname = container.querySelector('.surname');
+        if (givenName && surname) {
+          const fullName = `${givenName.textContent.trim()} ${surname.textContent.trim()}`;
+          authors.push(fullName);
+        }
+      });
+      if (authors.length > 0) {
+        metadata.authors = authors;
+        metadata.author = authors.join(', ');
+      }
+    } else {
+      // Fallback to original selector
+      const authorElements = document.querySelectorAll('.author-group .author');
+      if (authorElements.length > 0) {
+        const authors = Array.from(authorElements).map(el => el.textContent.trim());
+        metadata.authors = authors;
+        metadata.author = authors.join(', ');
+      }
+    }
+    
+    // Journal information - extract from publication title
+    const journalEl = document.querySelector('.publication-title .anchor-text');
+    if (journalEl) {
+      metadata.journal = journalEl.textContent.trim();
+    } else {
+      // Fallback to original selector
+      const fallbackJournalEl = document.querySelector('.journal-title');
+      if (fallbackJournalEl) {
+        metadata.journal = fallbackJournalEl.textContent.trim();
+      }
+    }
+    
+    // DOI
+    const doiEl = document.querySelector('.doi');
+    if (doiEl) {
+      metadata.doi = doiEl.textContent.replace('https://doi.org/', '').trim();
+    }
+    
+    // Abstract
+    const abstractEl = document.querySelector('.abstract');
+    if (abstractEl) {
+      metadata.abstract = abstractEl.textContent.trim();
+      metadata.description = metadata.abstract;
+    }
+    
+    // Publication date - parse from volume/issue information
+    const volumeInfoEl = document.querySelector('.text-xs');
+    if (volumeInfoEl) {
+      const volumeText = volumeInfoEl.textContent;
+      // Look for date patterns like "October 2020" or "May 1987"
+      const dateMatch = volumeText.match(/([A-Za-z]+\s+\d{4})/);
+      if (dateMatch) {
+        metadata.publishDate = dateMatch[1];
+      }
+      
+      // Also extract volume and issue information
+      const volumeMatch = volumeText.match(/Volume\s+(\d+)/);
+      if (volumeMatch) {
+        metadata.volume = volumeMatch[1];
+      }
+      
+      const issueMatch = volumeText.match(/Issue\s+(\d+)/);
+      if (issueMatch) {
+        metadata.issue = issueMatch[1];
+      }
+      
+      // Extract page numbers if present
+      const pagesMatch = volumeText.match(/Pages?\s+(\d+[-–]\d+)/);
+      if (pagesMatch) {
+        metadata.pages = pagesMatch[1];
+      }
+    } else {
+      // Fallback to original selector
+      const dateEl = document.querySelector('.publication-date');
+      if (dateEl) {
+        metadata.publishDate = dateEl.textContent.trim();
+      }
+    }
+    
+    metadata.contentType = 'journal-article';
+    metadata.publisher = 'Elsevier';
+    
+  } catch (e) {
+    console.error('Error in ScienceDirect extractor:', e);
+  }
+  
+  return metadata;
+}
+
+// Nature extractor
+function extractNatureMetadata() {
+  const metadata = {};
+  
+  try {
+    // Authors - extract from dc.creator meta tags first
+    const dcCreatorTags = document.querySelectorAll('meta[name="dc.creator"]');
+    if (dcCreatorTags.length > 0) {
+      const authors = [];
+      dcCreatorTags.forEach(tag => {
+        const content = tag.getAttribute('content');
+        if (content) {
+          // Format is "Last, First" - flip to "First Last"
+          if (content.includes(',')) {
+            const [lastName, firstName] = content.split(',').map(part => part.trim());
+            authors.push(`${firstName} ${lastName}`);
+          } else {
+            // If no comma, use as-is
+            authors.push(content.trim());
+          }
+        }
+      });
+      if (authors.length > 0) {
+        metadata.authors = authors;
+        metadata.author = authors.join(', ');
+      }
+    }
+    
+    // Nature has good structured data
+    const ldJsonScripts = document.querySelectorAll('script[type="application/ld+json"]');
+    for (const script of ldJsonScripts) {
+      try {
+        const data = JSON.parse(script.textContent);
+        if (data['@type'] === 'ScholarlyArticle') {
+          if (data.headline) metadata.title = data.headline;
+          if (data.author && !metadata.author) {
+            metadata.authors = Array.isArray(data.author) ? 
+              data.author.map(a => a.name) : [data.author.name];
+            metadata.author = metadata.authors.join(', ');
+          }
+          if (data.datePublished) metadata.publishDate = data.datePublished;
+          if (data.description) metadata.description = data.description;
+        }
+      } catch (e) {
+        // Continue
+      }
+    }
+    
+    // DOI - try prism.doi meta tag first
+    const prismDoiEl = document.querySelector('meta[name="prism.doi"]');
+    if (prismDoiEl && prismDoiEl.getAttribute('content')) {
+      let doi = prismDoiEl.getAttribute('content');
+      // Remove "doi:" prefix if present
+      doi = doi.replace(/^doi:/, '');
+      metadata.doi = doi;
+    } else {
+      // Fallback to original selector
+      const doiEl = document.querySelector('[data-test="doi"]');
+      if (doiEl) {
+        metadata.doi = doiEl.textContent.trim();
+      }
+    }
+    
+    // Journal
+    const journalEl = document.querySelector('[data-test="journal-title"]');
+    if (journalEl) {
+      metadata.journal = journalEl.textContent.trim();
+    }
+    
+    metadata.contentType = 'journal-article';
+    metadata.publisher = 'Nature Publishing Group';
+    
+  } catch (e) {
+    console.error('Error in Nature extractor:', e);
+  }
+  
+  return metadata;
+}
+
+// Springer extractor
+function extractSpringerMetadata() {
+  const metadata = {};
+  
+  try {
+    // Title
+    const titleEl = document.querySelector('h1.ArticleTitle, h1.ChapterTitle');
+    if (titleEl) {
+      metadata.title = titleEl.textContent.trim();
+    }
+    
+    // Authors
+    const authorElements = document.querySelectorAll('.authors__name');
+    if (authorElements.length > 0) {
+      const authors = Array.from(authorElements).map(el => el.textContent.trim());
+      metadata.authors = authors;
+      metadata.author = authors.join(', ');
+    }
+    
+    // DOI - try meta tag first
+    const doiMetaEl = document.querySelector('meta[name="doi"]');
+    if (doiMetaEl && doiMetaEl.getAttribute('content')) {
+      metadata.doi = doiMetaEl.getAttribute('content');
+    } else {
+      // Fallback to original selector
+      const doiEl = document.querySelector('.bibliographic-information__value--doi');
+      if (doiEl) {
+        metadata.doi = doiEl.textContent.trim();
+      }
+    }
+    
+    // Journal
+    const journalEl = document.querySelector('.JournalTitle');
+    if (journalEl) {
+      metadata.journal = journalEl.textContent.trim();
+    }
+    
+    // Abstract
+    const abstractEl = document.querySelector('.Abstract');
+    if (abstractEl) {
+      metadata.abstract = abstractEl.textContent.trim();
+      metadata.description = metadata.abstract;
+    }
+    
+    // Content type from og:type meta tag
+    const ogTypeEl = document.querySelector('meta[property="og:type"]');
+    if (ogTypeEl && ogTypeEl.getAttribute('content')) {
+      const ogType = ogTypeEl.getAttribute('content');
+      metadata.contentType = ogType; // Will be 'book', 'article', etc.
+    } else {
+      metadata.contentType = 'journal-article'; // Default fallback
+    }
+    
+    metadata.publisher = 'Springer';
+    
+  } catch (e) {
+    console.error('Error in Springer extractor:', e);
+  }
+  
+  return metadata;
+}
+
+// Wiley extractor
+function extractWileyMetadata() {
+  const metadata = {};
+  
+  try {
+    // Title
+    const titleEl = document.querySelector('h1.citation__title');
+    if (titleEl) {
+      metadata.title = titleEl.textContent.trim();
+    }
+    
+    // Authors
+    const authorElements = document.querySelectorAll('.author-name');
+    if (authorElements.length > 0) {
+      const authors = Array.from(authorElements).map(el => el.textContent.trim());
+      metadata.authors = authors;
+      metadata.author = authors.join(', ');
+    }
+    
+    // DOI
+    const doiEl = document.querySelector('.epub-doi');
+    if (doiEl) {
+      metadata.doi = doiEl.textContent.replace('https://doi.org/', '').trim();
+    }
+    
+    // Journal - try citation meta tag first
+    const citationJournalEl = document.querySelector('meta[name="citation_journal_title"]');
+    if (citationJournalEl && citationJournalEl.getAttribute('content')) {
+      metadata.journal = citationJournalEl.getAttribute('content');
+    } else {
+      // Fallback to original selector
+      const journalEl = document.querySelector('.journal-banner__title');
+      if (journalEl) {
+        metadata.journal = journalEl.textContent.trim();
+      }
+    }
+    
+    // Publication date
+    const dateEl = document.querySelector('.epub-date');
+    if (dateEl) {
+      metadata.publishDate = dateEl.textContent.trim();
+    }
+    
+    metadata.contentType = 'journal-article';
+    metadata.publisher = 'Wiley';
+    
+  } catch (e) {
+    console.error('Error in Wiley extractor:', e);
+  }
+  
+  return metadata;
+}
+
+// Reddit extractor
+function extractRedditMetadata() {
+  const metadata = {};
+  
+  try {
+    // Post title
+    const titleEl = document.querySelector('h1');
+    if (titleEl) {
+      metadata.title = titleEl.textContent.trim();
+    }
+    
+    // Author (Reddit username)
+    const authorEl = document.querySelector('[data-click-id="user"]');
+    if (authorEl) {
+      metadata.author = authorEl.textContent.trim();
+    }
+    
+    // Subreddit
+    const subredditMatch = window.location.href.match(/\/r\/([^\/]+)/);
+    if (subredditMatch) {
+      metadata.subreddit = subredditMatch[1];
+      metadata.section = `r/${subredditMatch[1]}`;
+    }
+    
+    // Post type
+    if (window.location.href.includes('/comments/')) {
+      metadata.postType = 'post';
+    } else {
+      metadata.postType = 'listing';
+    }
+    
+    // Upvotes (if visible)
+    const scoreEl = document.querySelector('[class*="score"]');
+    if (scoreEl) {
+      metadata.score = scoreEl.textContent.trim();
+    }
+    
+    // Post timestamp
+    const timeEl = document.querySelector('time[datetime]');
+    if (timeEl) {
+      metadata.publishDate = timeEl.getAttribute('datetime');
+    }
+    
+    metadata.contentType = 'social-media-post';
+    metadata.publisher = 'Reddit';
+    
+  } catch (e) {
+    console.error('Error in Reddit extractor:', e);
+  }
+  
+  return metadata;
+}
+
+// Twitter/X extractor
+function extractTwitterMetadata() {
+  const metadata = {};
+  
+  try {
+    // Tweet text (primary content)
+    const tweetEl = document.querySelector('[data-testid="tweetText"]');
+    if (tweetEl) {
+      metadata.title = tweetEl.textContent.trim();
+      metadata.tweetText = metadata.title;
+    }
+    
+    // Author
+    const authorEl = document.querySelector('[data-testid="User-Names"] span');
+    if (authorEl) {
+      metadata.author = authorEl.textContent.trim();
+    }
+    
+    // Username/handle
+    const usernameMatch = window.location.href.match(/twitter\.com\/([^\/]+)\/status|x\.com\/([^\/]+)\/status/);
+    if (usernameMatch) {
+      metadata.username = usernameMatch[1] || usernameMatch[2];
+    }
+    
+    // Tweet ID
+    const tweetIdMatch = window.location.href.match(/status\/(\d+)/);
+    if (tweetIdMatch) {
+      metadata.tweetId = tweetIdMatch[1];
+      metadata.citationKey = `tweet:${tweetIdMatch[1]}`;
+    }
+    
+    // Timestamp
+    const timeEl = document.querySelector('time[datetime]');
+    if (timeEl) {
+      metadata.publishDate = timeEl.getAttribute('datetime');
+    }
+    
+    metadata.contentType = 'social-media-post';
+    metadata.publisher = 'Twitter/X';
+    
+  } catch (e) {
+    console.error('Error in Twitter extractor:', e);
+  }
+  
+  return metadata;
+}
+
+// Brookings Institution extractor
+function extractBrookingsMetadata() {
+  const metadata = {};
+  
+  try {
+    // Title from og:title meta tag
+    const ogTitleEl = document.querySelector('meta[property="og:title"]');
+    if (ogTitleEl && ogTitleEl.getAttribute('content')) {
+      metadata.title = ogTitleEl.getAttribute('content');
+    }
+    
+    // Authors from person-hover links
+    const personHoverLinks = document.querySelectorAll('a[id*="person-hover"]');
+    if (personHoverLinks.length > 0) {
+      const authors = Array.from(personHoverLinks).map(link => link.textContent.trim());
+      metadata.authors = authors;
+      metadata.author = authors.join(', ');
+    }
+    
+    // Only fall back to JSON-LD if we're missing both title and authors
+    if (!metadata.title || !metadata.author) {
+      const ldJsonEl = document.querySelector('script[type="application/ld+json"]');
+      if (ldJsonEl) {
+        try {
+          const data = JSON.parse(ldJsonEl.textContent);
+          if (data.headline && !metadata.title) metadata.title = data.headline;
+          if (data.author && !metadata.author) {
+            if (Array.isArray(data.author)) {
+              metadata.authors = data.author.map(a => a.name);
+              metadata.author = metadata.authors.join(', ');
+            } else {
+              metadata.author = data.author.name || data.author;
+            }
+          }
+          if (data.datePublished) metadata.publishDate = data.datePublished;
+          if (data.description) metadata.description = data.description;
+        } catch (e) {
+          // Fallback
+        }
+      }
+    }
+    
+    // Publication type
+    const typeEl = document.querySelector('.report-meta__type, [class*="type"]');
+    if (typeEl) {
+      metadata.publicationType = typeEl.textContent.trim();
+    }
+    
+    // Topics/Tags
+    const topicElements = document.querySelectorAll('.topic-tag');
+    if (topicElements.length > 0) {
+      metadata.topics = Array.from(topicElements).map(el => el.textContent.trim());
+    }
+    
+    metadata.contentType = 'report';
+    metadata.publisher = 'Brookings Institution';
+    
+  } catch (e) {
+    console.error('Error in Brookings extractor:', e);
+  }
+  
+  return metadata;
+}
+
+// RAND Corporation extractor
+function extractRandMetadata() {
+  const metadata = {};
+  
+  try {
+    // Title from citation_title meta tag
+    const citationTitleEl = document.querySelector('meta[name="citation_title"]');
+    if (citationTitleEl && citationTitleEl.getAttribute('content')) {
+      metadata.title = citationTitleEl.getAttribute('content');
+    } else {
+      // Fallback to DOM selector
+      const titleEl = document.querySelector('h1.title');
+      if (titleEl) {
+        metadata.title = titleEl.textContent.trim();
+      }
+    }
+    
+    // Authors from DC.Contributor meta tags
+    const contributorTags = document.querySelectorAll('meta[name="DC.Contributor"]');
+    if (contributorTags.length > 0) {
+      const authors = Array.from(contributorTags).map(tag => {
+        const content = tag.getAttribute('content');
+        // Format is "Last, First" - flip to "First Last"
+        if (content && content.includes(',')) {
+          const [lastName, firstName] = content.split(',').map(part => part.trim());
+          return `${firstName} ${lastName}`;
+        } else {
+          return content ? content.trim() : '';
+        }
+      }).filter(author => author);
+      
+      if (authors.length > 0) {
+        metadata.authors = authors;
+        metadata.author = authors.join(', ');
+      }
+    } else {
+      // Fallback to DOM selectors
+      const authorElements = document.querySelectorAll('.authors a');
+      if (authorElements.length > 0) {
+        const authors = Array.from(authorElements).map(el => el.textContent.trim());
+        metadata.authors = authors;
+        metadata.author = authors.join(', ');
+      }
+    }
+    
+    // Publication date from citation_publication_date meta tag
+    const citationDateEl = document.querySelector('meta[name="citation_publication_date"]');
+    if (citationDateEl && citationDateEl.getAttribute('content')) {
+      metadata.publishDate = citationDateEl.getAttribute('content');
+    } else {
+      // Fallback to DOM selector
+      const dateEl = document.querySelector('.date');
+      if (dateEl) {
+        metadata.publishDate = dateEl.textContent.trim();
+      }
+    }
+    
+    // Document type
+    const typeEl = document.querySelector('.type');
+    if (typeEl) {
+      metadata.documentType = typeEl.textContent.trim();
+    }
+    
+    // Abstract/Summary
+    const summaryEl = document.querySelector('.summary, .abstract');
+    if (summaryEl) {
+      metadata.abstract = summaryEl.textContent.trim();
+      metadata.description = metadata.abstract;
+    }
+    
+    // RAND document number
+    const docNumMatch = window.location.href.match(/\/([A-Z]+-\d+)/);
+    if (docNumMatch) {
+      metadata.randDocNumber = docNumMatch[1];
+      metadata.citationKey = `rand:${docNumMatch[1]}`;
+    }
+    
+    metadata.contentType = 'report';
+    metadata.publisher = 'RAND Corporation';
+    
+  } catch (e) {
+    console.error('Error in RAND extractor:', e);
+  }
+  
+  return metadata;
+}
+
+// Pew Research extractor
+function extractPewMetadata() {
+  const metadata = {};
+  
+  try {
+    // Title
+    const titleEl = document.querySelector('h1.entry-title, h1');
+    if (titleEl) {
+      metadata.title = titleEl.textContent.trim();
+    }
+    
+    // Authors
+    const authorEl = document.querySelector('.authors, .byline');
+    if (authorEl) {
+      metadata.author = authorEl.textContent.trim();
+    }
+    
+    // Publication date
+    const dateEl = document.querySelector('.date, time[datetime]');
+    if (dateEl) {
+      if (dateEl.getAttribute('datetime')) {
+        metadata.publishDate = dateEl.getAttribute('datetime');
+      } else {
+        metadata.publishDate = dateEl.textContent.trim();
+      }
+    }
+    
+    // Report type/category
+    const categoryEl = document.querySelector('.category');
+    if (categoryEl) {
+      metadata.category = categoryEl.textContent.trim();
+    }
+    
+    // Topics
+    const topicElements = document.querySelectorAll('.topics a');
+    if (topicElements.length > 0) {
+      metadata.topics = Array.from(topicElements).map(el => el.textContent.trim());
+    }
+    
+    metadata.contentType = 'report';
+    metadata.publisher = 'Pew Research Center';
+    
+  } catch (e) {
+    console.error('Error in Pew Research extractor:', e);
+  }
+  
+  return metadata;
+}
+
+// Wikipedia extractor
+function extractWikipediaMetadata() {
+  const metadata = {};
+  
+  try {
+    // Article title
+    const titleEl = document.querySelector('#firstHeading');
+    if (titleEl) {
+      metadata.title = titleEl.textContent.trim();
+    }
+    
+    // Get article categories
+    const categoryElements = document.querySelectorAll('#mw-normal-catlinks ul li a');
+    if (categoryElements.length > 0) {
+      metadata.categories = Array.from(categoryElements).map(el => el.textContent.trim());
+    }
+    
+    // Last modified date
+    const lastModEl = document.querySelector('#footer-info-lastmod');
+    if (lastModEl) {
+      const dateMatch = lastModEl.textContent.match(/(\d{1,2} \w+ \d{4})/);
+      if (dateMatch) {
+        metadata.lastModified = dateMatch[1];
+      }
+    }
+    
+    // Language
+    const langMatch = window.location.hostname.match(/^(\w+)\.wikipedia/);
+    if (langMatch) {
+      metadata.language = langMatch[1];
+    }
+    
+    // Permanent link
+    const permalinkEl = document.querySelector('#t-permalink a');
+    if (permalinkEl) {
+      metadata.permanentUrl = permalinkEl.href;
+    }
+    
+    // First paragraph as description
+    const firstPara = document.querySelector('#mw-content-text .mw-parser-output > p:not(.mw-empty-elt)');
+    if (firstPara) {
+      metadata.description = firstPara.textContent.trim();
+    }
+    
+    metadata.contentType = 'encyclopedia-article';
+    metadata.publisher = 'Wikipedia';
+    metadata.isOpenAccess = true;
+    
+  } catch (e) {
+    console.error('Error in Wikipedia extractor:', e);
+  }
+  
+  return metadata;
+}
+
+// Arctic Research WordPress extractor
+function extractArcticResearchMetadata() {
+  const metadata = {};
+  
+  try {
+    // Title from og:title meta tag
+    const ogTitleEl = document.querySelector('meta[property="og:title"]');
+    if (ogTitleEl && ogTitleEl.getAttribute('content')) {
+      metadata.title = ogTitleEl.getAttribute('content');
+    }
+    
+    // Authors from og:description if it starts with "by"
+    const ogDescEl = document.querySelector('meta[property="og:description"]');
+    if (ogDescEl && ogDescEl.getAttribute('content')) {
+      const description = ogDescEl.getAttribute('content');
+      // Clean up HTML entities
+      const cleanDesc = description.replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&');
+      
+      if (cleanDesc.toLowerCase().startsWith('by ')) {
+        // Extract the author part (everything after "by " until the first sentence or major break)
+        let authorText = cleanDesc.substring(3); // Remove "by "
+        
+        // Find where the author list ends - look for common patterns
+        const endPatterns = [
+          /\s+Greetings\s+from/i,
+          /\s+We\s+come\s+from/i,
+          /\s+This\s+is/i,
+          /\s+In\s+this/i,
+          /\.\s+[A-Z]/,  // Period followed by capital letter (new sentence)
+          /\s+[A-Z][a-z]+\s+from\s+the/i // "Something from the..."
+        ];
+        
+        for (const pattern of endPatterns) {
+          const match = authorText.search(pattern);
+          if (match !== -1) {
+            authorText = authorText.substring(0, match);
+            break;
+          }
+        }
+        
+        // Clean up and parse authors
+        authorText = authorText.trim();
+        if (authorText) {
+          // Split by "and" and clean up each author
+          const authors = authorText.split(/\s+and\s+/i)
+            .map(author => author.trim())
+            .filter(author => author.length > 0)
+            .map(author => {
+              // Remove any trailing punctuation
+              return author.replace(/[,;.]+$/, '').trim();
+            });
+          
+          if (authors.length > 0) {
+            metadata.authors = authors;
+            metadata.author = authors.join(', ');
+          }
+        }
+      }
+    }
+    
+    // Publication date from article:published_time meta tag
+    const publishedTimeEl = document.querySelector('meta[property="article:published_time"]');
+    if (publishedTimeEl && publishedTimeEl.getAttribute('content')) {
+      metadata.publishDate = publishedTimeEl.getAttribute('content');
+    }
+    
+    // Set content type and publisher
+    metadata.contentType = 'website';
+    metadata.publisher = 'Arctic Research';
+    
+  } catch (e) {
+    console.error('Error in Arctic Research extractor:', e);
+  }
+  
+  return metadata;
+}
+
+// Arctic News Blogspot extractor
+function extractArcticNewsMetadata() {
+  const metadata = {};
+  
+  try {
+    // Fixed author and content type as specified
+    metadata.author = 'Sam Carana';
+    metadata.authors = ['Sam Carana'];
+    metadata.contentType = 'website';
+    metadata.publisher = 'Arctic News';
+    
+    // Do not attempt to fill in the date as specified
+    // Title will be handled by generic extractors
+    
+  } catch (e) {
+    console.error('Error in Arctic News extractor:', e);
+  }
+  
+  return metadata;
+}
+
+// Mongabay News extractor
+function extractMongabayMetadata() {
+  const metadata = {};
+  
+  try {
+    // Title from <title> tag
+    metadata.title = document.title || '';
+    
+    // Author - first try the about-author section
+    const aboutAuthorEl = document.querySelector('.about-author .bylines a');
+    if (aboutAuthorEl && aboutAuthorEl.textContent.trim()) {
+      metadata.author = aboutAuthorEl.textContent.trim();
+      metadata.authors = [metadata.author];
+    } else {
+      // Fallback: Author fuzzy matching from twitter:data1
+      const twitterData1El = document.querySelector('meta[name="twitter:data1"]');
+      if (twitterData1El && twitterData1El.getAttribute('content')) {
+        const username = twitterData1El.getAttribute('content').toLowerCase();
+        
+        // Look for author names on the page that might match the username
+        const authorSelectors = [
+          '.author', '.byline', '.writer', '.article-author', '.post-author',
+          '[class*="author"]', '[class*="byline"]', 'a[href*="author"]',
+          '.article-meta a', '.meta a', '.credits a'
+        ];
+        
+        let bestMatch = null;
+        let bestScore = 0;
+        
+        // Search through potential author elements
+        for (const selector of authorSelectors) {
+          const elements = document.querySelectorAll(selector);
+          elements.forEach(el => {
+            const text = el.textContent.trim();
+            if (text && text.length > 2 && text.length < 50) {
+              // Calculate similarity score
+              const score = calculateUsernameMatchScore(username, text);
+              if (score > bestScore && score > 0.3) { // Minimum threshold
+                bestMatch = text;
+                bestScore = score;
+              }
+            }
+          });
+        }
+        
+        // If no good match found, also check all text on the page for names
+        if (!bestMatch || bestScore < 0.6) {
+          const bodyText = document.body.textContent;
+          // Look for "By [Name]" patterns
+          const byPatterns = [
+            /By\s+([A-Z][a-z]+\s+[A-Z][a-z]+)/g,
+            /by\s+([A-Z][a-z]+\s+[A-Z][a-z]+)/g
+          ];
+          
+          for (const pattern of byPatterns) {
+            let match;
+            while ((match = pattern.exec(bodyText)) !== null) {
+              const name = match[1];
+              const score = calculateUsernameMatchScore(username, name);
+              if (score > bestScore && score > 0.3) {
+                bestMatch = name;
+                bestScore = score;
+              }
+            }
+          }
+        }
+        
+        if (bestMatch) {
+          metadata.author = bestMatch;
+          metadata.authors = [bestMatch];
+        }
+      }
+    }
+    
+    metadata.contentType = 'news-article';
+    metadata.publisher = 'Mongabay';
+    
+  } catch (e) {
+    console.error('Error in Mongabay extractor:', e);
+  }
+  
+  return metadata;
+}
+
+// Helper function to calculate similarity between username and full name
+function calculateUsernameMatchScore(username, fullName) {
+  const name = fullName.toLowerCase().replace(/[^a-z\s]/g, '');
+  const parts = name.split(/\s+/).filter(part => part.length > 1);
+  
+  if (parts.length === 0) return 0;
+  
+  // Check if username contains parts of the name
+  let score = 0;
+  let totalChars = 0;
+  
+  for (const part of parts) {
+    totalChars += part.length;
+    if (username.includes(part)) {
+      score += part.length;
+    } else {
+      // Check for partial matches (first few characters)
+      for (let i = 3; i <= part.length; i++) {
+        const substring = part.substring(0, i);
+        if (username.includes(substring)) {
+          score += substring.length * 0.7; // Partial match gets lower score
+          break;
+        }
+      }
+    }
+  }
+  
+  // Check reverse: does the name contain the username?
+  if (name.replace(/\s/g, '').includes(username)) {
+    score += username.length;
+    totalChars += username.length;
+  }
+  
+  return totalChars > 0 ? score / totalChars : 0;
+}
+
+// High North News extractor
+function extractHighNorthNewsMetadata() {
+  const metadata = {};
+  
+  try {
+    // Authors from byline-item__name spans
+    const bylineElements = document.querySelectorAll('.byline-item__name a');
+    if (bylineElements.length > 0) {
+      const authors = Array.from(bylineElements).map(el => el.textContent.trim());
+      metadata.authors = authors;
+      metadata.author = authors.join(', ');
+    }
+    
+    // Let generic extractors handle title, date, etc.
+    metadata.contentType = 'news-article';
+    metadata.publisher = 'High North News';
+    
+  } catch (e) {
+    console.error('Error in High North News extractor:', e);
+  }
+  
+  return metadata;
+}
+
+// Cato Institute extractor
+function extractCatoMetadata() {
+  const metadata = {};
+  
+  try {
+    // Authors from .authors div
+    const authorsDiv = document.querySelector('.authors');
+    if (authorsDiv) {
+      // Find all author links within the div
+      const authorLinks = authorsDiv.querySelectorAll('a[href*="/people/"]');
+      if (authorLinks.length > 0) {
+        const authors = Array.from(authorLinks).map(link => link.textContent.trim());
+        metadata.authors = authors;
+        metadata.author = authors.join(', ');
+      } else {
+        // Fallback: look for any spans with property="author"
+        const authorSpans = authorsDiv.querySelectorAll('span[property="author"]');
+        if (authorSpans.length > 0) {
+          const authors = Array.from(authorSpans).map(span => {
+            const link = span.querySelector('a');
+            return link ? link.textContent.trim() : span.textContent.trim();
+          });
+          metadata.authors = authors;
+          metadata.author = authors.join(', ');
+        }
+      }
+    }
+    
+    // Set content type and publisher
+    metadata.contentType = 'website';
+    metadata.publisher = 'Cato Institute';
+    
+    // Let generic extractors handle title, date, etc.
+    
+  } catch (e) {
+    console.error('Error in Cato extractor:', e);
+  }
+  
+  return metadata;
+}
+
+// CSIS extractor
+function extractCSISMetadata() {
+  const metadata = {};
+  
+  try {
+    // Title from og:title meta tag
+    const ogTitleEl = document.querySelector('meta[property="og:title"]');
+    if (ogTitleEl && ogTitleEl.getAttribute('content')) {
+      metadata.title = ogTitleEl.getAttribute('content');
+    }
+    
+    // Authors - first try byline block
+    const bylineBlock = document.querySelector('.byline-block .contributor-list');
+    if (bylineBlock) {
+      const authorLinks = bylineBlock.querySelectorAll('.contributor--item a');
+      if (authorLinks.length > 0) {
+        const authors = Array.from(authorLinks).map(link => link.textContent.trim());
+        metadata.authors = authors;
+        metadata.author = authors.join(', ');
+      }
+    } else {
+      // Fallback: Authors from twitter:data1 meta tag
+      const twitterData1El = document.querySelector('meta[name="twitter:data1"]');
+      if (twitterData1El && twitterData1El.getAttribute('content')) {
+        const authorsContent = twitterData1El.getAttribute('content');
+        // Split by comma and clean up
+        const authors = authorsContent.split(',').map(author => author.trim()).filter(author => author);
+        if (authors.length > 0) {
+          metadata.authors = authors;
+          metadata.author = authors.join(', ');
+        }
+      }
+    }
+    
+    // Publication date - first try byline block
+    const bylineDateElements = document.querySelectorAll('.byline-block .contributors p, .byline-block .mt-xs');
+    let foundDate = false;
+    for (const el of bylineDateElements) {
+      if (el.textContent.includes('Published')) {
+        const dateText = el.textContent.trim();
+        // Extract date from "Published May 20, 2025"
+        const dateMatch = dateText.match(/Published\s+(.+)/);
+        if (dateMatch) {
+          metadata.publishDate = dateMatch[1];
+          foundDate = true;
+          break;
+        }
+      }
+    }
+    
+    if (!foundDate) {
+      // Fallback: Publication date from article:published_time meta tag
+      const publishedTimeEl = document.querySelector('meta[property="article:published_time"]');
+      if (publishedTimeEl && publishedTimeEl.getAttribute('content')) {
+        metadata.publishDate = publishedTimeEl.getAttribute('content');
+      }
+    }
+    
+    // Set content type and publisher
+    metadata.contentType = 'website';
+    metadata.publisher = 'Center for Strategic and International Studies';
+    
+  } catch (e) {
+    console.error('Error in CSIS extractor:', e);
+  }
+  
+  return metadata;
+}
+
+// Carnegie Endowment extractor
+function extractCarnegieMetadata() {
+  const metadata = {};
+  
+  try {
+    // Title from og:title meta tag
+    const ogTitleEl = document.querySelector('meta[property="og:title"]');
+    if (ogTitleEl && ogTitleEl.getAttribute('content')) {
+      metadata.title = ogTitleEl.getAttribute('content');
+    }
+    
+    // Authors from contributors div
+    const contributorsDiv = document.querySelector('.contributors');
+    if (contributorsDiv) {
+      const authorLinks = contributorsDiv.querySelectorAll('a.anchor');
+      if (authorLinks.length > 0) {
+        const authors = Array.from(authorLinks).map(link => link.textContent.trim());
+        metadata.authors = authors;
+        metadata.author = authors.join(', ');
+      }
+    }
+    
+    // Publication date from publisher div
+    const publisherDiv = document.querySelector('.publisher .bottom-meta span');
+    if (publisherDiv && publisherDiv.textContent.includes('Published on')) {
+      const dateText = publisherDiv.textContent.trim();
+      // Extract date from "Published on May 21, 2025"
+      const dateMatch = dateText.match(/Published on\s+(.+)/);
+      if (dateMatch) {
+        metadata.publishDate = dateMatch[1];
+      }
+    }
+    
+    // Set content type and publisher
+    metadata.contentType = 'website';
+    metadata.publisher = 'Carnegie Endowment for International Peace';
+    
+  } catch (e) {
+    console.error('Error in Carnegie Endowment extractor:', e);
+  }
+  
+  return metadata;
+}
+
+// Heritage Foundation extractor
+function extractHeritageMetadata() {
+  const metadata = {};
+  
+  try {
+    // Title from og:title meta tag
+    const ogTitleEl = document.querySelector('meta[property="og:title"]');
+    if (ogTitleEl && ogTitleEl.getAttribute('content')) {
+      metadata.title = ogTitleEl.getAttribute('content');
+    }
+    
+    // Author from author-card
+    const authorCardEl = document.querySelector('.author-card__name span');
+    if (authorCardEl) {
+      metadata.author = authorCardEl.textContent.trim();
+      metadata.authors = [metadata.author];
+    }
+    
+    // Publication date from article-general-info
+    const generalInfoEl = document.querySelector('.article-general-info');
+    if (generalInfoEl) {
+      const infoText = generalInfoEl.textContent.trim();
+      // Extract date before the read time info
+      const dateMatch = infoText.match(/^([A-Za-z]+ \d{1,2}, \d{4})/);
+      if (dateMatch) {
+        metadata.publishDate = dateMatch[1];
+      }
+    }
+    
+    // Set content type and publisher
+    metadata.contentType = 'website';
+    metadata.publisher = 'The Heritage Foundation';
+    
+  } catch (e) {
+    console.error('Error in Heritage Foundation extractor:', e);
+  }
+  
+  return metadata;
+}
+
+// Urban Institute extractor
+function extractUrbanMetadata() {
+  const metadata = {};
+  
+  try {
+    // Title from citation_title meta tag
+    const citationTitleEl = document.querySelector('meta[name="citation_title"]');
+    if (citationTitleEl && citationTitleEl.getAttribute('content')) {
+      metadata.title = citationTitleEl.getAttribute('content');
+    }
+    
+    // Author from citation_author meta tag
+    const citationAuthorEl = document.querySelector('meta[name="citation_author"]');
+    if (citationAuthorEl && citationAuthorEl.getAttribute('content')) {
+      metadata.author = citationAuthorEl.getAttribute('content');
+      metadata.authors = [metadata.author];
+    }
+    
+    // Publication date from citation_publication_date meta tag
+    const citationDateEl = document.querySelector('meta[name="citation_publication_date"]');
+    if (citationDateEl && citationDateEl.getAttribute('content')) {
+      metadata.publishDate = citationDateEl.getAttribute('content');
+    }
+    
+    // PDF URL from citation_pdf_url meta tag
+    const citationPdfEl = document.querySelector('meta[name="citation_pdf_url"]');
+    if (citationPdfEl && citationPdfEl.getAttribute('content')) {
+      metadata.pdfUrl = citationPdfEl.getAttribute('content');
+    }
+    
+    // Set content type and publisher
+    metadata.contentType = 'report';
+    metadata.publisher = 'Urban Institute';
+    
+  } catch (e) {
+    console.error('Error in Urban Institute extractor:', e);
+  }
+  
+  return metadata;
+}
+
+// Tax Policy Center extractor
+function extractTaxPolicyCenterMetadata() {
+  const metadata = {};
+  
+  try {
+    // Author from lbj-link element
+    const lbjLinkEl = document.querySelector('lbj-link[href*="/author/"]');
+    if (lbjLinkEl && lbjLinkEl.textContent.trim()) {
+      metadata.author = lbjLinkEl.textContent.trim();
+      metadata.authors = [metadata.author];
+    }
+    
+    // Set content type and publisher
+    metadata.contentType = 'website';
+    metadata.publisher = 'Tax Policy Center';
+    
+    // Let generic extractors handle title, date, etc.
+    
+  } catch (e) {
+    console.error('Error in Tax Policy Center extractor:', e);
+  }
+  
+  return metadata;
+}
+
+// American Progress extractor
+function extractAmericanProgressMetadata() {
+  const metadata = {};
+  
+  try {
+    // Title from og:title meta tag
+    const ogTitleEl = document.querySelector('meta[property="og:title"]');
+    if (ogTitleEl && ogTitleEl.getAttribute('content')) {
+      metadata.title = ogTitleEl.getAttribute('content');
+    }
+    
+    // Try to extract author and date from PageMap comment
+    const pageSource = document.documentElement.outerHTML;
+    const pageMapMatch = pageSource.match(/<!--\s*<PageMap>[\s\S]*?<\/PageMap>\s*-->/);
+    
+    if (pageMapMatch) {
+      const pageMapContent = pageMapMatch[0];
+      
+      // Extract author from PageMap
+      const authorMatch = pageMapContent.match(/<Attribute name="author">([^<]+)<\/Attribute>/);
+      if (authorMatch) {
+        const authorsContent = authorMatch[1];
+        // Split by semicolon and clean up
+        const authors = authorsContent.split(';').map(author => author.trim()).filter(author => author);
+        if (authors.length > 0) {
+          metadata.authors = authors;
+          metadata.author = authors.join(', ');
+        }
+      }
+      
+      // Extract date from PageMap
+      const dateMatch = pageMapContent.match(/<Attribute name="post_date">([^<]+)<\/Attribute>/);
+      if (dateMatch) {
+        metadata.publishDate = dateMatch[1];
+      }
+    }
+    
+    // Fallback: Author from parsely-author meta tags if PageMap didn't work
+    if (!metadata.author) {
+      const parselyAuthorTags = document.querySelectorAll('meta[name="parsely-author"]');
+      if (parselyAuthorTags.length > 0) {
+        const authors = Array.from(parselyAuthorTags).map(tag => tag.getAttribute('content')).filter(author => author);
+        if (authors.length > 0) {
+          metadata.authors = authors;
+          metadata.author = authors.join(', ');
+        }
+      }
+    }
+    
+    // Set content type and publisher
+    metadata.contentType = 'website';
+    metadata.publisher = 'Center for American Progress';
+    
+  } catch (e) {
+    console.error('Error in American Progress extractor:', e);
+  }
+  
+  return metadata;
+}
+
+// Atlantic Council extractor
+function extractAtlanticCouncilMetadata() {
+  const metadata = {};
+  
+  try {
+    // Title from og:title meta tag
+    const ogTitleEl = document.querySelector('meta[property="og:title"]');
+    if (ogTitleEl && ogTitleEl.getAttribute('content')) {
+      metadata.title = ogTitleEl.getAttribute('content');
+    }
+    
+    // Publication date from article:published_time meta tag
+    const publishedTimeEl = document.querySelector('meta[property="article:published_time"]');
+    if (publishedTimeEl && publishedTimeEl.getAttribute('content')) {
+      metadata.publishDate = publishedTimeEl.getAttribute('content');
+    }
+    
+    // Authors from expert author paragraph - specifically the one with "By"
+    const expertAuthorEl = document.querySelector('.gta-site-banner--expert-author.lower');
+    console.log('Atlantic Council: Found expert author element?', !!expertAuthorEl);
+    
+    if (expertAuthorEl) {
+      // Check if this paragraph contains "By" to ensure it's the author byline
+      const containsBy = expertAuthorEl.textContent.includes('By');
+      console.log('Atlantic Council: Contains "By"?', containsBy);
+      
+      if (containsBy) {
+        // Get author links within this specific paragraph
+        const authorLinks = expertAuthorEl.querySelectorAll('a.gta-site-banner--tax--expert, a.gta-post-site-banner--tax--expert');
+        console.log('Atlantic Council: Found author links:', authorLinks.length);
+        
+        if (authorLinks.length > 0) {
+          const authors = Array.from(authorLinks).map(link => link.textContent.trim());
+          console.log('Atlantic Council: Extracted authors:', authors);
+          metadata.authors = authors;
+          metadata.author = authors.join(', ');
+        }
+      }
+    }
+    
+    // If that didn't work, try looking for any paragraph with "By" and expert links
+    if (!metadata.author) {
+      const allParagraphs = document.querySelectorAll('p');
+      for (const p of allParagraphs) {
+        if (p.textContent.includes('By') && p.querySelector('a[href*="/expert/"]')) {
+          const authorLinks = p.querySelectorAll('a[href*="/expert/"]');
+          if (authorLinks.length > 0) {
+            const authors = Array.from(authorLinks).map(link => link.textContent.trim())
+              .filter(text => text && text.length > 2 && text.length < 50);
+            if (authors.length > 0) {
+              console.log('Atlantic Council: Fallback extracted authors:', authors);
+              metadata.authors = authors;
+              metadata.author = authors.join(', ');
+              break;
+            }
+          }
+        }
+      }
+    }
+    
+    // Set content type and publisher
+    metadata.contentType = 'website';
+    metadata.publisher = 'Atlantic Council';
+    
+  } catch (e) {
+    console.error('Error in Atlantic Council extractor:', e);
+  }
+  
+  return metadata;
+}
+
+// Hudson Institute extractor
+function extractHudsonMetadata() {
+  const metadata = {};
+  
+  try {
+    // Title from og:title meta tag
+    const ogTitleEl = document.querySelector('meta[property="og:title"]');
+    if (ogTitleEl && ogTitleEl.getAttribute('content')) {
+      metadata.title = ogTitleEl.getAttribute('content');
+    }
+    
+    // Author from expert-author--names div within the experts region
+    // First try to find author in the main experts region
+    let authorDiv = document.querySelector('.layout__region--experts .expert-author--names');
+    
+    // If not found, try within the expert field block
+    if (!authorDiv) {
+      authorDiv = document.querySelector('.block-field-blocknodeshort-form-articlefield-expert .expert-author--names');
+    }
+    
+    // Last resort: just get the first expert-author--names
+    if (!authorDiv) {
+      authorDiv = document.querySelector('.expert-author--names');
+    }
+    
+    console.log('Hudson: Found author div?', !!authorDiv);
+    
+    if (authorDiv) {
+      const authorLinks = authorDiv.querySelectorAll('a');
+      console.log('Hudson: Found', authorLinks.length, 'author links');
+      
+      if (authorLinks.length > 0) {
+        const authors = Array.from(authorLinks).map(link => link.textContent.trim());
+        console.log('Hudson: Extracted authors:', authors);
+        metadata.authors = authors;
+        metadata.author = authors.join(', ');
+      }
+    }
+    
+    // Date from field-date time element
+    // Log all date elements to debug
+    const allDateElements = document.querySelectorAll('.field-date time');
+    console.log('Hudson: Found', allDateElements.length, 'date elements');
+    allDateElements.forEach((el, index) => {
+      console.log(`Hudson: Date ${index}:`, el.textContent.trim(), 'datetime:', el.getAttribute('datetime'));
+    });
+    
+    // Try to find the article date specifically
+    const dateTimeEl = document.querySelector('.block-field-blocknodeshort-form-articlefield-date .field-date time');
+    if (dateTimeEl) {
+      console.log('Hudson: Using article date:', dateTimeEl.textContent.trim());
+      // First try datetime attribute
+      if (dateTimeEl.getAttribute('datetime')) {
+        metadata.publishDate = dateTimeEl.getAttribute('datetime');
+      } else {
+        // Fallback to text content
+        metadata.publishDate = dateTimeEl.textContent.trim();
+      }
+    } else {
+      // Fallback to first .field-date time element
+      const firstDateEl = document.querySelector('.field-date time');
+      if (firstDateEl) {
+        console.log('Hudson: Using first date found:', firstDateEl.textContent.trim());
+        if (firstDateEl.getAttribute('datetime')) {
+          metadata.publishDate = firstDateEl.getAttribute('datetime');
+        } else {
+          metadata.publishDate = firstDateEl.textContent.trim();
+        }
+      }
+    }
+    
+    // Set content type and publisher
+    metadata.contentType = 'website';
+    metadata.publisher = 'Hudson Institute';
+    
+  } catch (e) {
+    console.error('Error in Hudson Institute extractor:', e);
+  }
+  
+  return metadata;
+}
+
+// CNAS (Center for a New American Security) extractor
+function extractCNASMetadata() {
+  const metadata = {};
+  
+  try {
+    // Authors from author-list
+    const authorList = document.querySelector('.author-list');
+    if (authorList) {
+      const authorItems = authorList.querySelectorAll('.author-list__item');
+      if (authorItems.length > 0) {
+        const authors = [];
+        authorItems.forEach(item => {
+          // Look for author name in the h3 link
+          const authorLink = item.querySelector('h3 a');
+          if (authorLink && authorLink.textContent.trim()) {
+            authors.push(authorLink.textContent.trim());
+          }
+        });
+        
+        if (authors.length > 0) {
+          metadata.authors = authors;
+          metadata.author = authors.join(', ');
+        }
+      }
+    }
+    
+    // Fallback: Authors from article header meta byline
+    if (!metadata.author) {
+      const bylineEl = document.querySelector('.article__header__meta__byline');
+      if (bylineEl) {
+        const contributorLinks = bylineEl.querySelectorAll('a.contributor');
+        if (contributorLinks.length > 0) {
+          const authors = Array.from(contributorLinks).map(link => link.textContent.trim());
+          metadata.authors = authors;
+          metadata.author = authors.join(', ');
+        }
+      }
+    }
+    
+    // Set content type and publisher
+    metadata.contentType = 'website';
+    metadata.publisher = 'Center for a New American Security';
+    
+    // Let generic extractors handle title, date, etc.
+    
+  } catch (e) {
+    console.error('Error in CNAS extractor:', e);
+  }
+  
+  return metadata;
+}
+
+// Baker Institute extractor
+function extractBakerInstituteMetadata() {
+  const metadata = {};
+  
+  try {
+    // Extract date and authors from the specific div structure
+    // Looking for: <div class="coh-inline-element print--show coh-ce-cpt_title_banner-a20975a1">May 19, 2025 | Ibrahim Al-Assil, Rana B. Khoury, David M. Satterfield</div>
+    const dateAuthorEl = document.querySelector('.coh-inline-element.print--show[class*="cpt_title_banner"]');
+    if (dateAuthorEl && dateAuthorEl.textContent) {
+      const text = dateAuthorEl.textContent.trim();
+      // Split by pipe to separate date from authors
+      const parts = text.split('|').map(p => p.trim());
+      
+      if (parts.length >= 2) {
+        // First part is the date
+        const dateStr = parts[0];
+        // Try to parse the date (format: "May 19, 2025")
+        const parsedDate = new Date(dateStr);
+        if (!isNaN(parsedDate.getTime())) {
+          metadata.publishDate = parsedDate.toISOString().split('T')[0]; // Format as YYYY-MM-DD
+        } else {
+          metadata.publishDate = dateStr; // Use original if parsing fails
+        }
+        
+        // Second part contains authors separated by commas
+        const authorsStr = parts[1];
+        const authors = authorsStr.split(',').map(a => a.trim()).filter(a => a);
+        if (authors.length > 0) {
+          metadata.authors = authors;
+          metadata.author = authors.join(', ');
+        }
+      } else if (parts.length === 1) {
+        // Only date or only authors - try to determine which
+        const text = parts[0];
+        const parsedDate = new Date(text);
+        if (!isNaN(parsedDate.getTime())) {
+          metadata.publishDate = parsedDate.toISOString().split('T')[0];
+        } else {
+          // Assume it's authors
+          const authors = text.split(',').map(a => a.trim()).filter(a => a);
+          if (authors.length > 0) {
+            metadata.authors = authors;
+            metadata.author = authors.join(', ');
+          }
+        }
+      }
+    }
+    
+    // Set content type and publisher
+    metadata.contentType = 'report'; // Baker Institute typically publishes research reports
+    metadata.publisher = 'Baker Institute for Public Policy';
+    
+    // Let generic extractors handle title and other fields
+    
+  } catch (e) {
+    console.error('Error in Baker Institute extractor:', e);
+  }
+  
+  return metadata;
+}
+
+// RFF (Resources for the Future) extractor
+function extractRFFMetadata() {
+  const metadata = {};
+  
+  try {
+    // Extract authors from hero-article__author span
+    const authorSpan = document.querySelector('.hero-article__author');
+    if (authorSpan) {
+      // Get all author links within the span
+      const authorLinks = authorSpan.querySelectorAll('a');
+      if (authorLinks.length > 0) {
+        const authors = Array.from(authorLinks).map(link => link.textContent.trim()).filter(a => a);
+        if (authors.length > 0) {
+          metadata.authors = authors;
+          metadata.author = authors.join(', ');
+        }
+      } else {
+        // Fallback: try to get text content and parse it
+        const authorText = authorSpan.textContent.trim();
+        if (authorText) {
+          // Remove extra whitespace and "and" connectors
+          const cleanedText = authorText.replace(/\s+and\s+/g, ', ').replace(/\s*,\s*/g, ', ').trim();
+          const authors = cleanedText.split(',').map(a => a.trim()).filter(a => a && a !== 'and');
+          if (authors.length > 0) {
+            metadata.authors = authors;
+            metadata.author = authors.join(', ');
+          }
+        }
+      }
+    }
+    
+    // Fallback: Check hero-meta structure if no authors found yet
+    if (!metadata.author) {
+      // Look for the hero-meta__column with "Authors" title
+      const heroMetaColumns = document.querySelectorAll('.hero-meta__column');
+      for (const column of heroMetaColumns) {
+        const titleEl = column.querySelector('.hero-meta__column-title');
+        if (titleEl && titleEl.textContent.trim().toLowerCase() === 'authors') {
+          const contentEl = column.querySelector('.hero-meta__column-content');
+          if (contentEl) {
+            // Get all author links within the content
+            const authorLinks = contentEl.querySelectorAll('a');
+            if (authorLinks.length > 0) {
+              const authors = Array.from(authorLinks).map(link => link.textContent.trim()).filter(a => a);
+              if (authors.length > 0) {
+                metadata.authors = authors;
+                metadata.author = authors.join(', ');
+                break;
+              }
+            } else {
+              // Fallback: parse text content
+              const authorText = contentEl.textContent.trim();
+              if (authorText) {
+                const cleanedText = authorText.replace(/\s+and\s+/g, ', ').replace(/\s*,\s*/g, ', ').trim();
+                const authors = cleanedText.split(',').map(a => a.trim()).filter(a => a && a !== 'and');
+                if (authors.length > 0) {
+                  metadata.authors = authors;
+                  metadata.author = authors.join(', ');
+                  break;
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+    
+    // Set content type and publisher
+    metadata.contentType = 'report'; // RFF typically publishes research reports and policy briefs
+    metadata.publisher = 'Resources for the Future';
+    
+    // Let generic extractors handle title, date, and other fields
+    
+  } catch (e) {
+    console.error('Error in RFF extractor:', e);
+  }
+  
+  return metadata;
+}
+
+// Hoover Institution extractor
+function extractHooverMetadata() {
+  const metadata = {};
+  
+  try {
+    // Extract title from dcterms.title meta tag
+    const titleMeta = document.querySelector('meta[name="dcterms.title"]');
+    if (titleMeta && titleMeta.getAttribute('content')) {
+      metadata.title = titleMeta.getAttribute('content').trim();
+    }
+    
+    // Extract authors from author-info span
+    const authorInfo = document.querySelector('.author-info.view');
+    if (authorInfo) {
+      // Get all author links within the span
+      const authorLinks = authorInfo.querySelectorAll('a');
+      if (authorLinks.length > 0) {
+        const authors = Array.from(authorLinks).map(link => link.textContent.trim()).filter(a => a);
+        if (authors.length > 0) {
+          metadata.authors = authors;
+          metadata.author = authors.join(', ');
+        }
+      }
+    }
+    
+    // Extract date from date span - try multiple approaches
+    const dateSpan = document.querySelector('span.date');
+    if (dateSpan) {
+      // Clone the element and remove child elements to get just the text
+      const clonedSpan = dateSpan.cloneNode(true);
+      const childElements = clonedSpan.querySelectorAll('*');
+      childElements.forEach(child => child.remove());
+      
+      let dateStr = clonedSpan.textContent.trim();
+      
+      // If that didn't work, try another approach
+      if (!dateStr) {
+        // Get the HTML and extract text before the first tag
+        const html = dateSpan.innerHTML;
+        const match = html.match(/^([^<]+)/);
+        if (match) {
+          dateStr = match[1].trim();
+        }
+      }
+      
+      // If we still don't have a date, try regex on full text
+      if (!dateStr) {
+        const fullText = dateSpan.textContent;
+        // Look for common date patterns
+        const datePatterns = [
+          /(\w+day,\s+\w+\s+\d{1,2},\s+\d{4})/i,  // Thursday, May 8, 2025
+          /(\w+\s+\d{1,2},\s+\d{4})/i,            // May 8, 2025
+          /(\d{1,2}\/\d{1,2}\/\d{4})/              // 05/08/2025
+        ];
+        
+        for (const pattern of datePatterns) {
+          const match = fullText.match(pattern);
+          if (match) {
+            dateStr = match[1];
+            break;
+          }
+        }
+      }
+      
+      if (dateStr) {
+        // Try to parse the date
+        const parsedDate = new Date(dateStr);
+        if (!isNaN(parsedDate.getTime())) {
+          metadata.publishDate = parsedDate.toISOString().split('T')[0]; // Format as YYYY-MM-DD
+        } else {
+          metadata.publishDate = dateStr; // Use original if parsing fails
+        }
+      }
+    }
+    
+    // Fallback: check for date in meta tags
+    if (!metadata.publishDate) {
+      const dateMetaTags = [
+        'meta[property="article:published_time"]',
+        'meta[name="publish_date"]',
+        'meta[name="publication_date"]',
+        'meta[property="og:article:published_time"]'
+      ];
+      
+      for (const selector of dateMetaTags) {
+        const metaTag = document.querySelector(selector);
+        if (metaTag && metaTag.getAttribute('content')) {
+          const dateStr = metaTag.getAttribute('content');
+          const parsedDate = new Date(dateStr);
+          if (!isNaN(parsedDate.getTime())) {
+            metadata.publishDate = parsedDate.toISOString().split('T')[0];
+            break;
+          }
+        }
+      }
+    }
+    
+    // Set content type and publisher
+    metadata.contentType = 'report'; // Hoover Institution typically publishes research and policy papers
+    metadata.publisher = 'Hoover Institution';
+    
+    // Let generic extractors handle any remaining fields
+    
+  } catch (e) {
+    console.error('Error in Hoover extractor:', e);
+  }
+  
+  return metadata;
+}

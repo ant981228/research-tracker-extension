@@ -34,6 +34,9 @@ let metadataAuthor;
 let metadataDate;
 let metadataPublisher;
 let metadataType;
+let metadataJournal;
+let metadataDoi;
+let metadataInfo;
 let saveMetadataBtn;
 let cancelMetadataBtn;
 let closeMetadataBtn;
@@ -166,6 +169,9 @@ function init() {
   metadataDate = document.getElementById('metadata-date');
   metadataPublisher = document.getElementById('metadata-publisher');
   metadataType = document.getElementById('metadata-type');
+  metadataJournal = document.getElementById('metadata-journal');
+  metadataDoi = document.getElementById('metadata-doi');
+  metadataInfo = document.getElementById('metadata-info');
   saveMetadataBtn = document.getElementById('save-metadata-btn');
   cancelMetadataBtn = document.getElementById('cancel-metadata-btn');
   closeMetadataBtn = document.querySelector('.close-modal');
@@ -1132,6 +1138,9 @@ function openMetadataModal() {
   metadataDate.value = '';
   metadataPublisher.value = '';
   metadataType.value = '';
+  metadataJournal.value = '';
+  metadataDoi.value = '';
+  metadataInfo.innerHTML = '';
   
   // Fetch the current metadata for this URL if available
   chrome.runtime.sendMessage({
@@ -1148,10 +1157,28 @@ function openMetadataModal() {
       
       // Fill the form with current values
       metadataTitle.value = currentPageMetadata.title || '';
-      metadataAuthor.value = currentPageMetadata.author || '';
+      
+      // Handle authors - could be string or array
+      if (currentPageMetadata.authors && Array.isArray(currentPageMetadata.authors)) {
+        metadataAuthor.value = currentPageMetadata.authors.join(', ');
+      } else {
+        metadataAuthor.value = currentPageMetadata.author || '';
+      }
+      
       metadataDate.value = currentPageMetadata.publishDate || '';
       metadataPublisher.value = currentPageMetadata.publisher || '';
       metadataType.value = currentPageMetadata.contentType || '';
+      metadataJournal.value = currentPageMetadata.journal || '';
+      metadataDoi.value = currentPageMetadata.doi || '';
+      
+      // Show extraction info if available
+      if (currentPageMetadata.extractorType) {
+        let infoText = `Metadata extracted via ${currentPageMetadata.extractorType}`;
+        if (currentPageMetadata.extractorSite) {
+          infoText += ` from ${currentPageMetadata.extractorSite}`;
+        }
+        metadataInfo.innerHTML = `<small style="color: #666; font-style: italic;">${infoText}</small>`;
+      }
     }
     
     // Show the modal using our modal management system
@@ -1177,9 +1204,16 @@ function saveMetadata() {
     publishDate: metadataDate.value.trim(),
     publisher: metadataPublisher.value.trim(),
     contentType: metadataType.value,
+    journal: metadataJournal.value.trim(),
+    doi: metadataDoi.value.trim(),
     manuallyEdited: true,
     editTimestamp: new Date().toISOString()
   };
+  
+  // Handle authors as array if multiple authors separated by commas
+  if (metadata.author && metadata.author.includes(',')) {
+    metadata.authors = metadata.author.split(',').map(a => a.trim()).filter(a => a);
+  }
   
   // Only include fields that have values
   Object.keys(metadata).forEach(key => {
