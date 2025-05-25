@@ -10,9 +10,14 @@
   <div class="container">
     <div class="header-container">
       <h1>Research Tracker</h1>
-      <button id="settings-btn" class="settings-btn" title="Settings">
-        <span class="settings-icon">⚙️</span>
-      </button>
+      <div class="header-buttons">
+        <button id="help-btn" class="help-btn" title="Help">
+          <span class="help-icon">ℹ️</span>
+        </button>
+        <button id="settings-btn" class="settings-btn" title="Settings">
+          <span class="settings-icon">⚙️</span>
+        </button>
+      </div>
     </div>
     
     <!-- Popout functionality removed
@@ -234,6 +239,52 @@
           <div class="modal-buttons">
             <button id="save-settings-btn" class="action-btn">Save Settings</button>
             <button id="cancel-settings-btn" class="action-btn secondary-btn">Cancel</button>
+          </div>
+        </div>
+      </div>
+      
+      <!-- Help Modal -->
+      <div id="help-modal" class="modal hidden" style="display: none;">
+        <div class="modal-content">
+          <span class="close-help-modal">&times;</span>
+          <h3>Help</h3>
+          
+          <div class="help-section">
+            <h4>Keyboard Shortcuts</h4>
+            <ul class="shortcuts-list">
+              <li><code>Ctrl+1</code> - Set title from selected text</li>
+              <li><code>Ctrl+2</code> - Set author from selected text</li>
+              <li><code>Ctrl+3</code> - Set quals from selected text</li>
+              <li><code>Ctrl+4</code> - Set date from selected text</li>
+              <li><code>Ctrl+5</code> - Set publisher from selected text</li>
+              <li><code>Ctrl+6</code> - Set journal from selected text</li>
+              <li><code>Ctrl+7</code> - Set DOI from selected text</li>
+              <li><code>Ctrl+Q</code> - Copy citation for current page</li>
+            </ul>
+          </div>
+          
+          <div class="help-section">
+            <h4>Core Functions</h4>
+            <ul>
+              <li><strong>Record:</strong> Track your research journey including searches and page visits</li>
+              <li><strong>Add Notes:</strong> Attach notes to any page or search during recording</li>
+              <li><strong>Edit Metadata:</strong> Customize page information for accurate citations</li>
+              <li><strong>Copy Citation:</strong> Generate formatted citations from page metadata</li>
+              <li><strong>Export Sessions:</strong> Save your research data as JSON or TXT files</li>
+            </ul>
+          </div>
+          
+          <div class="help-section">
+            <h4>Tips</h4>
+            <ul>
+              <li>Metadata is automatically extracted from supported academic sites</li>
+              <li>Citation preview shows in bottom-right corner when enabled</li>
+              <li>Sessions are saved locally and persist between browser restarts</li>
+            </ul>
+          </div>
+          
+          <div class="modal-buttons">
+            <button id="close-help-btn" class="action-btn secondary-btn">Close</button>
           </div>
         </div>
       </div>

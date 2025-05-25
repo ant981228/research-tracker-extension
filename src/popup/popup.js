@@ -69,6 +69,12 @@ let citationPreviewEnabled;
 let saveSettingsBtn;
 let cancelSettingsBtn;
 
+// Help Modal Elements
+let helpBtn;
+let helpModal;
+let closeHelpModalBtn;
+let closeHelpBtn;
+
 // Current session state
 let selectedPageUrl = null;
 let addNoteInProgress = false;
@@ -106,6 +112,10 @@ function showModal(modal, type) {
     modalStack.push('settings');
     settingsModal.classList.add('hidden');
     settingsModal.style.display = 'none';
+  } else if (helpModal && helpModal.style.display === 'flex') {
+    modalStack.push('help');
+    helpModal.classList.add('hidden');
+    helpModal.style.display = 'none';
   }
   
   // Show the new modal
@@ -131,6 +141,9 @@ function hideCurrentModal() {
   } else if (settingsModal && settingsModal.style.display === 'flex') {
     settingsModal.classList.add('hidden');
     settingsModal.style.display = 'none';
+  } else if (helpModal && helpModal.style.display === 'flex') {
+    helpModal.classList.add('hidden');
+    helpModal.style.display = 'none';
   }
   
   // If there's a previous modal in the stack, show it
@@ -152,6 +165,9 @@ function hideCurrentModal() {
     } else if (previousModal === 'settings') {
       settingsModal.classList.remove('hidden');
       settingsModal.style.display = 'flex';
+    } else if (previousModal === 'help') {
+      helpModal.classList.remove('hidden');
+      helpModal.style.display = 'flex';
     }
   }
   
@@ -223,6 +239,12 @@ function init() {
   saveSettingsBtn = document.getElementById('save-settings-btn');
   cancelSettingsBtn = document.getElementById('cancel-settings-btn');
   
+  // Initialize help modal elements
+  helpBtn = document.getElementById('help-btn');
+  helpModal = document.getElementById('help-modal');
+  closeHelpModalBtn = document.querySelector('.close-help-modal');
+  closeHelpBtn = document.getElementById('close-help-btn');
+  
   // Action buttons
   viewPagesBtn = document.getElementById('view-pages-btn');
   viewSearchesBtn = document.getElementById('view-searches-btn');
@@ -292,6 +314,14 @@ function init() {
   cancelSettingsBtn.addEventListener('click', closeSettingsModal);
   saveSettingsBtn.addEventListener('click', saveCitationSettings);
   
+  // Help button and modal event listeners
+  helpBtn.addEventListener('click', () => {
+    showModal(helpModal, 'help');
+  });
+  
+  closeHelpModalBtn.addEventListener('click', closeHelpModal);
+  closeHelpBtn.addEventListener('click', closeHelpModal);
+  
   // Citation format dropdown change handler
   citationFormatSelect.addEventListener('change', (e) => {
     if (e.target.value === 'custom') {
@@ -323,6 +353,7 @@ function init() {
     if (event.target === pagesModal) closePagesModal();
     if (event.target === searchesModal) closeSearchesModal();
     if (event.target === settingsModal) closeSettingsModal();
+    if (event.target === helpModal) closeHelpModal();
   });
   
   // Add click handler for session renaming
@@ -1730,5 +1761,9 @@ function saveCitationSettings() {
 }
 
 function closeSettingsModal() {
+  hideCurrentModal();
+}
+
+function closeHelpModal() {
   hideCurrentModal();
 }

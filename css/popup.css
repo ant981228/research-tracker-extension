@@ -61,8 +61,15 @@ h1 {
   border-bottom: none;
 }
 
-/* Settings button */
-.settings-btn {
+/* Header buttons container */
+.header-buttons {
+  display: flex;
+  gap: 8px;
+}
+
+/* Settings and help buttons */
+.settings-btn,
+.help-btn {
   background: none;
   border: none;
   cursor: pointer;
@@ -72,13 +79,44 @@ h1 {
   transition: opacity 0.2s;
 }
 
-.settings-btn:hover {
+.settings-btn:hover,
+.help-btn:hover {
   opacity: 1;
 }
 
 /* Settings modal specific styles */
 .settings-section {
   margin-bottom: 20px;
+}
+
+/* Help modal specific styles */
+.help-section {
+  margin-bottom: 20px;
+}
+
+.help-section h4 {
+  margin-bottom: 8px;
+  font-size: 14px;
+  color: #333;
+}
+
+.help-section ul {
+  margin: 0;
+  padding-left: 20px;
+}
+
+.help-section li {
+  margin-bottom: 6px;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.shortcuts-list code {
+  background-color: #f0f0f0;
+  padding: 2px 4px;
+  border-radius: 3px;
+  font-family: monospace;
+  font-size: 11px;
 }
 
 .settings-section h4 {
@@ -582,14 +620,14 @@ h3 {
   resize: none;
 }
 
-.close-modal, .close-note-modal, .close-pages-modal, .close-searches-modal, .close-settings-modal {
+.close-modal, .close-note-modal, .close-pages-modal, .close-searches-modal, .close-settings-modal, .close-help-modal {
   float: right;
   font-size: 20px;
   cursor: pointer;
   color: #aaa;
 }
 
-.close-modal:hover, .close-note-modal:hover, .close-pages-modal:hover, .close-searches-modal:hover, .close-settings-modal:hover {
+.close-modal:hover, .close-note-modal:hover, .close-pages-modal:hover, .close-searches-modal:hover, .close-settings-modal:hover, .close-help-modal:hover {
   color: #555;
 }
 
