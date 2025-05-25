@@ -45,24 +45,27 @@
       </div>
     </div>
     
+    <!-- Always visible current page section -->
+    <div id="current-page-section" class="section">
+      <h3>Current Page</h3>
+      <div id="current-page" class="page-item selectable"></div>
+    </div>
+    
     <div id="current-session" class="section hidden">
       <h2>Current Session: <span id="current-session-name">Unnamed</span></h2>
       <p>Started: <span id="session-start-time">-</span></p>
       <p>Events recorded: <span id="event-count">0</span></p>
       
       <div id="session-status">
-        <div class="status-section">
-          <h3>Current Page</h3>
-          <div id="current-page" class="page-item selectable"></div>
-        </div>
-        
         <div class="action-buttons">
           <button id="view-pages-btn" class="action-btn">View Recent Pages</button>
           <button id="view-searches-btn" class="action-btn">View Recent Searches</button>
         </div>
       </div>
-      
-      <!-- Metadata Edit Modal -->
+    </div>
+    
+    <!-- Modals - Always accessible -->
+    <!-- Metadata Edit Modal -->
       <div id="metadata-modal" class="modal hidden" style="display: none;">
         <div class="modal-content wide-modal">
           <span class="close-modal">&times;</span>
@@ -286,7 +289,6 @@
           </div>
         </div>
       </div>
-    </div>
     
     <div id="sessions-section" class="section">
       <h2>Previous Sessions</h2>

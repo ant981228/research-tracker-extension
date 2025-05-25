@@ -21,6 +21,9 @@ let currentSession = null;
 let autosaveInterval = null;
 let activityMonitorInterval = null;
 
+// Temporary metadata storage for when not recording
+let tempMetadata = {};
+
 // Rate limiting for adding notes
 let lastNoteTimestamp = 0;
 const NOTE_RATE_LIMIT_MS = 3000; // 3 seconds
@@ -154,13 +157,25 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     case 'updatePageMetadata':
       console.log('Received updatePageMetadata message:', message);
       try {
-        if (isRecording && currentSession && message.url && message.metadata) {
-          const result = updatePageVisitMetadata(message.url, message.metadata);
-          console.log('Metadata update complete, result:', result);
-          sendResponse({ success: true });
+        if (message.url && message.metadata) {
+          if (isRecording && currentSession) {
+            // Update in the session
+            const result = updatePageVisitMetadata(message.url, message.metadata);
+            console.log('Metadata update complete, result:', result);
+            sendResponse({ success: true });
+          } else {
+            // Store temporarily when not recording
+            tempMetadata[message.url] = {
+              ...tempMetadata[message.url],
+              ...message.metadata,
+              lastUpdated: new Date().toISOString()
+            };
+            console.log('Metadata stored temporarily for:', message.url);
+            sendResponse({ success: true });
+          }
         } else {
-          console.warn('Cannot update metadata:', { isRecording, hasCurrentSession: !!currentSession, hasUrl: !!message.url, hasMetadata: !!message.metadata });
-          sendResponse({ success: false, error: 'Not recording or missing data' });
+          console.warn('Cannot update metadata: missing URL or metadata');
+          sendResponse({ success: false, error: 'Missing URL or metadata' });
         }
       } catch (e) {
         console.error('Error updating metadata:', e);
@@ -171,11 +186,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       
     case 'getPageMetadata':
       try {
-        if (isRecording && currentSession && message.url) {
-          const metadata = getPageMetadataForUrl(message.url);
+        if (message.url) {
+          let metadata = {};
+          if (isRecording && currentSession) {
+            // Get from session
+            metadata = getPageMetadataForUrl(message.url);
+          } else {
+            // Get from temporary storage
+            metadata = tempMetadata[message.url] || {};
+          }
           sendResponse({ success: true, metadata });
         } else {
-          sendResponse({ success: false, error: 'Not recording or missing URL', metadata: {} });
+          sendResponse({ success: false, error: 'Missing URL', metadata: {} });
         }
       } catch (e) {
         console.error('Error in getPageMetadata:', e);
@@ -386,7 +408,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         const url = currentTab.url;
         
         // Get metadata for the current page
-        const metadata = getPageMetadataForUrl(url);
+        let metadata = {};
+        if (isRecording && currentSession) {
+          metadata = getPageMetadataForUrl(url);
+        } else {
+          metadata = tempMetadata[url] || {};
+        }
         
         // Get citation settings from storage
         chrome.storage.local.get(['citationSettings'], async (result) => {

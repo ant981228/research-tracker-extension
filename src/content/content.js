@@ -3684,13 +3684,8 @@ document.addEventListener('keydown', async (e) => {
     e.stopPropagation();
     e.stopImmediatePropagation();
     
-    // Check if recording
-    const recording = await isCurrentlyRecording();
-    console.log('Research Tracker: Recording status:', recording);
-    if (!recording) {
-      console.log('Research Tracker: Not recording, ignoring shortcut');
-      return; // Only work during recording sessions
-    }
+    // Keyboard shortcuts now work even when not recording
+    // Metadata will be stored temporarily for the current page
     
     // Get selected text
     const selectedText = window.getSelection().toString();
@@ -4095,3 +4090,21 @@ chrome.storage.local.get(['citationSettings'], (result) => {
     }, 1000);
   }
 });
+
+// Store extracted metadata automatically when page loads
+// This ensures metadata is available for citation even when not recording
+setTimeout(() => {
+  const extractedMetadata = extractPageMetadata();
+  if (extractedMetadata && Object.keys(extractedMetadata).length > 0) {
+    // Send to background script to store temporarily
+    chrome.runtime.sendMessage({
+      action: 'updatePageMetadata',
+      url: window.location.href,
+      metadata: extractedMetadata
+    }, (response) => {
+      if (response && response.success) {
+        console.log('Research Tracker: Page metadata auto-stored');
+      }
+    });
+  }
+}, 1500); // Wait a bit for page to fully load

@@ -402,6 +402,9 @@ function updateUI(status) {
   isRecording = status.isRecording;
   currentSession = status.currentSession;
   
+  // Always update current page display
+  updatePageDisplay(currentUrl);
+  
   if (isRecording && currentSession) {
     startBtn.disabled = true;
     pauseBtn.disabled = false;
@@ -432,8 +435,7 @@ function updateUI(status) {
     currentSessionName.title = "Click to rename session";
     currentSessionName.style.cursor = "pointer";
     
-    // Update current page and history
-    updatePageDisplay(currentUrl);
+    // Update history
     updateRecent(currentSession.recentPages, currentSession.recentSearches);
     
     // Show current session section
@@ -482,19 +484,22 @@ function updatePageDisplay(url) {
         const pageTitle = metadata.title || tab.title || 'Untitled';
         
         // Display current page with best available title
+        const noteButton = isRecording ? '<button class="page-action-btn add-note-btn">Add Note</button>' : '';
         currentPageEl.innerHTML = `
           <div class="page-title">${pageTitle}</div>
           <div class="page-url">${truncateUrl(tab.url)}</div>
           <div class="page-time">Current page</div>
           <div class="page-actions">
-            <button class="page-action-btn add-note-btn">Add Note</button>
+            ${noteButton}
             <button class="page-action-btn edit-metadata-btn">Edit Metadata</button>
             <button class="page-action-btn copy-citation-btn">Copy Citation</button>
           </div>
         `;
         
-        // Set up add note button handler
-        currentPageEl.querySelector('.add-note-btn').addEventListener('click', (e) => {
+        // Set up add note button handler (if recording)
+        const addNoteBtn = currentPageEl.querySelector('.add-note-btn');
+        if (addNoteBtn) {
+          addNoteBtn.addEventListener('click', (e) => {
           e.stopPropagation(); // Prevent event bubbling
           selectUrl(tab.url, pageTitle);
           document.querySelectorAll('.page-item.selected').forEach(el => {
@@ -504,7 +509,8 @@ function updatePageDisplay(url) {
           
           // Open the note modal
           openNoteModal();
-        });
+          });
+        }
         
         // Set up edit metadata button handler
         currentPageEl.querySelector('.edit-metadata-btn').addEventListener('click', (e) => {
