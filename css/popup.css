@@ -582,14 +582,14 @@ h3 {
   resize: none;
 }
 
-.close-modal, .close-note-modal, .close-pages-modal, .close-searches-modal {
+.close-modal, .close-note-modal, .close-pages-modal, .close-searches-modal, .close-settings-modal {
   float: right;
   font-size: 20px;
   cursor: pointer;
   color: #aaa;
 }
 
-.close-modal:hover, .close-note-modal:hover, .close-pages-modal:hover, .close-searches-modal:hover {
+.close-modal:hover, .close-note-modal:hover, .close-pages-modal:hover, .close-searches-modal:hover, .close-settings-modal:hover {
   color: #555;
 }
 
@@ -613,6 +613,13 @@ h3 {
   border-radius: 4px;
   font-family: inherit;
   font-size: 13px;
+}
+
+/* Exclude checkboxes from the 100% width rule */
+.form-group input[type="checkbox"] {
+  width: auto;
+  padding: 0;
+  margin: 0 0 0 8px;
 }
 
 /* Metadata form grid layout */

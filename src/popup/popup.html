@@ -181,8 +181,6 @@
           <h3>Settings</h3>
           
           <div class="settings-section">
-            <h4>Citation Format</h4>
-            
             <div class="form-group">
               <label for="citation-format">Select Citation Style:</label>
               <select id="citation-format">
@@ -196,9 +194,9 @@
             </div>
             
             <div class="form-group">
-              <label>
+              <label for="citation-preview-enabled" style="cursor: pointer;">
+                Show citation preview on pages:
                 <input type="checkbox" id="citation-preview-enabled"> 
-                Show citation preview on pages
               </label>
               <div class="setting-description">
                 Displays a floating citation preview in the bottom-right corner of web pages
@@ -207,7 +205,7 @@
             
             <div id="custom-format-section" class="form-group" style="display: none;">
               <label for="custom-format-template">Custom Citation Template:</label>
-              <textarea id="custom-format-template" rows="4" placeholder="{author} ({year}). {title}. {publisher}."></textarea>
+              <textarea id="custom-format-template" rows="4" style="width: 100%; box-sizing: border-box;" placeholder="{authorShort} {yearShort}, {quals}, &quot;{title},&quot; {publisher}, {date}, {url}"></textarea>
               <div class="template-help">
                 <p><strong>Available variables:</strong></p>
                 <ul>
@@ -228,7 +226,7 @@
                   <li><code>{accessDateShort}</code> - Today's date (MM/DD/YYYY)</li>
                   <li><code>{quals}</code> - Qualification information</li>
                 </ul>
-                <p><strong>Example:</strong> {author} ({yearShort}). {title}. {publisher}. Retrieved {accessDateShort} from {url}</p>
+                <p><strong>Example:</strong> {authorShort} {yearShort}, {quals}, "{title}," {publisher}, {date}, {url}</p>
               </div>
             </div>
           </div>
