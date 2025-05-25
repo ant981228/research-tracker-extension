@@ -94,9 +94,31 @@ const SITE_SPECIFIC_EXTRACTORS = {
   'highnorthnews.com': extractHighNorthNewsMetadata
 };
 
+// Citation preview functionality
+let citationPreview = null;
+let citationPreviewEnabled = false;
+
 // Listen for messages from background script
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   switch (message.action) {
+    case 'updateCitationPreviewSetting':
+      citationPreviewEnabled = message.previewEnabled;
+      if (citationPreviewEnabled) {
+        createCitationPreview();
+      } else {
+        removeCitationPreview();
+      }
+      sendResponse({ success: true });
+      break;
+      
+    case 'metadataUpdated':
+      // Update citation preview when metadata is updated from popup
+      if (citationPreview) {
+        updateCitationPreview();
+      }
+      sendResponse({ success: true });
+      break;
+      
     case 'extractMetadata':
       const metadata = extractPageMetadata();
       sendResponse({ metadata });
@@ -3447,17 +3469,24 @@ function showToast(message, type = 'success') {
       backgroundColor = '#28a745'; // Green
   }
   
+  // Calculate bottom position based on citation preview
+  let bottomPosition = '20px';
+  if (citationPreview && citationPreview.offsetHeight) {
+    // Position above the citation preview with some spacing
+    bottomPosition = `${citationPreview.offsetHeight + 30}px`;
+  }
+  
   // Add styles
   toast.style.cssText = `
     position: fixed;
-    bottom: 20px;
+    bottom: ${bottomPosition};
     right: 20px;
     background-color: ${backgroundColor};
     color: ${type === 'warning' ? '#000' : '#fff'};
     padding: 12px 20px;
     border-radius: 4px;
     box-shadow: 0 2px 10px rgba(0,0,0,0.3);
-    z-index: 9999;
+    z-index: 10001;
     font-family: Arial, sans-serif;
     font-size: 14px;
     max-width: 300px;
@@ -3603,22 +3632,51 @@ async function isCurrentlyRecording() {
 async function updateCurrentPageMetadata(field, value) {
   const url = window.location.href;
   
-  // Send message to background script to update metadata
-  chrome.runtime.sendMessage({
-    action: 'updatePageMetadata',
-    url: url,
-    metadata: { [field]: value }
-  }, (response) => {
-    if (response && response.success) {
+  try {
+    // First, get existing metadata
+    const existingResponse = await new Promise((resolve) => {
+      chrome.runtime.sendMessage({
+        action: 'getPageMetadata',
+        url: url
+      }, resolve);
+    });
+    
+    const existingMetadata = (existingResponse && existingResponse.success && existingResponse.metadata) ? existingResponse.metadata : {};
+    
+    // Create updated metadata object with all existing fields plus the new one
+    const updatedMetadata = {
+      ...existingMetadata,
+      [field]: value
+    };
+    
+    // Send the complete metadata object back
+    const updateResponse = await new Promise((resolve) => {
+      chrome.runtime.sendMessage({
+        action: 'updatePageMetadata',
+        url: url,
+        metadata: updatedMetadata
+      }, resolve);
+    });
+    
+    if (updateResponse && updateResponse.success) {
       console.log(`Updated ${field} to:`, value);
+      
+      // Update citation preview if it's visible
+      if (citationPreview) {
+        updateCitationPreview();
+      }
     } else {
-      console.error('Failed to update metadata:', response);
+      console.error('Failed to update metadata:', updateResponse);
     }
-  });
+  } catch (error) {
+    console.error('Error in updateCurrentPageMetadata:', error);
+  }
 }
 
 // Keyboard shortcut handler
 document.addEventListener('keydown', async (e) => {
+  console.log('Research Tracker: Key pressed:', e.key, 'Ctrl:', e.ctrlKey, 'Shift:', e.shiftKey, 'Alt:', e.altKey);
+  
   // Check for Ctrl+[1-6]
   if (e.ctrlKey && !e.shiftKey && !e.altKey && e.key >= '1' && e.key <= '6') {
     console.log('Research Tracker: Ctrl+' + e.key + ' detected');
@@ -3724,3 +3782,250 @@ document.addEventListener('keydown', async (e) => {
 console.log('Research Tracker: Keyboard shortcuts initialized.');
 console.log('  Ctrl+[1-6] with selected text during recording: Title, Author, Date, Publisher, Journal, DOI');
 console.log('  Ctrl+q : Copy citation for current page');
+
+// ===== CITATION PREVIEW FUNCTIONALITY =====
+
+function createCitationPreview() {
+  // Remove existing preview if it exists
+  removeCitationPreview();
+  
+  // Create preview container
+  citationPreview = document.createElement('div');
+  citationPreview.id = 'research-tracker-citation-preview';
+  citationPreview.style.cssText = `
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    max-width: 400px;
+    background: #fff;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    z-index: 10000;
+    font-family: Arial, sans-serif;
+    font-size: 12px;
+    line-height: 1.4;
+    opacity: 0.9;
+    transition: opacity 0.2s;
+  `;
+  
+  // Create header
+  const header = document.createElement('div');
+  header.style.cssText = `
+    background: #f8f9fa;
+    padding: 8px 12px;
+    border-bottom: 1px solid #ddd;
+    border-radius: 8px 8px 0 0;
+    font-weight: bold;
+    color: #495057;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  `;
+  header.innerHTML = `
+    <span>Citation Preview</span>
+    <button id="citation-preview-close" style="
+      background: none;
+      border: none;
+      color: #6c757d;
+      cursor: pointer;
+      font-size: 14px;
+      padding: 0;
+      line-height: 1;
+    ">×</button>
+  `;
+  
+  // Create content area
+  const content = document.createElement('div');
+  content.id = 'citation-preview-content';
+  content.style.cssText = `
+    padding: 12px;
+    color: #333;
+    word-wrap: break-word;
+  `;
+  content.textContent = 'Loading citation...';
+  
+  // Assemble preview
+  citationPreview.appendChild(header);
+  citationPreview.appendChild(content);
+  
+  // Add close button handler
+  header.querySelector('#citation-preview-close').addEventListener('click', () => {
+    removeCitationPreview();
+  });
+  
+  // Add hover effects
+  citationPreview.addEventListener('mouseenter', () => {
+    citationPreview.style.opacity = '1';
+  });
+  
+  citationPreview.addEventListener('mouseleave', () => {
+    citationPreview.style.opacity = '0.9';
+  });
+  
+  // Add to page
+  document.body.appendChild(citationPreview);
+  
+  // Generate and display citation
+  updateCitationPreview();
+}
+
+function removeCitationPreview() {
+  if (citationPreview) {
+    citationPreview.remove();
+    citationPreview = null;
+  }
+}
+
+async function updateCitationPreview() {
+  if (!citationPreview) return;
+  
+  const contentEl = citationPreview.querySelector('#citation-preview-content');
+  if (!contentEl) return;
+  
+  try {
+    // Get citation settings
+    const settingsResult = await new Promise(resolve => {
+      chrome.storage.local.get(['citationSettings'], resolve);
+    });
+    const settings = settingsResult.citationSettings || { format: 'apa', customTemplate: '' };
+    
+    // Get stored metadata from background script
+    const metadataResult = await new Promise(resolve => {
+      chrome.runtime.sendMessage({
+        action: 'getPageMetadata',
+        url: window.location.href
+      }, resolve);
+    });
+    
+    // Fallback to extracted metadata if no stored metadata
+    const storedMetadata = (metadataResult && metadataResult.success && metadataResult.metadata) ? metadataResult.metadata : {};
+    const extractedMetadata = extractPageMetadata();
+    
+    // Merge stored metadata (priority) with extracted metadata (fallback)
+    const metadata = {
+      ...extractedMetadata,
+      ...storedMetadata
+    };
+    
+    // Generate citation
+    const citation = generateCitationPreview(metadata, window.location.href, document.title, settings);
+    
+    contentEl.innerHTML = `<div style="font-style: italic;">${citation}</div>`;
+  } catch (error) {
+    console.error('Error updating citation preview:', error);
+    contentEl.textContent = 'Error generating citation';
+  }
+}
+
+function generateCitationPreview(metadata, url, title, settings) {
+  // Reuse the same citation generation logic from background.js
+  const citationFormats = {
+    apa: '{author} ({year}). {title}. {publisher}. {url ? "Retrieved {accessDate} from {url}" : ""}',
+    mla: '{author}. "{title}." {publisher}, {day} {month} {year}, {url}.',
+    chicago: '{author}. "{title}." {publisher}, {month} {day}, {year}. {url}.',
+    harvard: '{author} {year}, {title}, {publisher}, viewed {accessDate}, <{url}>.',
+    ieee: '{author}, "{title}," {publisher}, {year}. [Online]. Available: {url}. [Accessed: {accessDate}].'
+  };
+  
+  const template = settings.format === 'custom' ? settings.customTemplate : citationFormats[settings.format];
+  
+  // Helper functions (simplified)
+  const formatDateParts = (dateStr) => {
+    if (!dateStr) return { year: 'n.d.', yearShort: 'n.d.', month: '', monthNum: '', day: '', date: 'n.d.' };
+    const date = new Date(dateStr);
+    if (isNaN(date.getTime())) return { year: dateStr, yearShort: dateStr, month: '', monthNum: '', day: '', date: dateStr };
+    
+    const year = date.getFullYear().toString();
+    const yearShort = year.slice(-2);
+    const monthNum = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    
+    return {
+      year: year,
+      yearShort: yearShort,
+      month: date.toLocaleDateString('en-US', { month: 'long' }),
+      monthNum: monthNum,
+      day: day,
+      date: `${monthNum}/${day}/${year}`
+    };
+  };
+  
+  const formatAuthors = (authorStr, format) => {
+    if (!authorStr) return { full: 'Unknown Author', short: 'Unknown Author' };
+    const authors = authorStr.split(',').map(a => a.trim());
+    
+    let formattedAuthors = authors;
+    if (format === 'apa' || format === 'harvard') {
+      formattedAuthors = authors.map(author => {
+        const parts = author.split(' ');
+        if (parts.length >= 2) {
+          const lastName = parts[parts.length - 1];
+          const initials = parts.slice(0, -1).map(n => n[0] + '.').join(' ');
+          return `${lastName}, ${initials}`;
+        }
+        return author;
+      });
+    }
+    
+    let shortVersion;
+    if (authors.length === 1) {
+      shortVersion = formattedAuthors[0];
+    } else if (authors.length === 2) {
+      shortVersion = formattedAuthors.join(' & ');
+    } else {
+      shortVersion = formattedAuthors[0] + ' et al.';
+    }
+    
+    return { full: formattedAuthors.join(', '), short: shortVersion };
+  };
+  
+  const dateParts = formatDateParts(metadata.date || metadata.publishDate);
+  const today = new Date();
+  const accessDate = today.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+  const accessDateShort = `${String(today.getMonth() + 1).padStart(2, '0')}/${String(today.getDate()).padStart(2, '0')}/${today.getFullYear()}`;
+  const authorFormats = formatAuthors(metadata.author, settings.format);
+  
+  const variables = {
+    author: authorFormats.full,
+    authorShort: authorFormats.short,
+    year: dateParts.year,
+    yearShort: dateParts.yearShort,
+    month: dateParts.month,
+    monthNum: dateParts.monthNum,
+    day: dateParts.day,
+    date: dateParts.date,
+    title: metadata.title || title || 'Untitled',
+    publisher: metadata.publisher || metadata.journal || new URL(url).hostname.replace('www.', ''),
+    journal: metadata.journal || '',
+    doi: metadata.doi || '',
+    url: url,
+    accessDate: accessDate,
+    accessDateShort: accessDateShort
+  };
+  
+  let citation = template;
+  Object.entries(variables).forEach(([key, value]) => {
+    const conditionalRegex = new RegExp(`{${key}\\s*\\?\\s*"([^"]*)"\\s*:\\s*"([^"]*)"\\s*}`, 'g');
+    citation = citation.replace(conditionalRegex, value ? '$1' : '$2');
+    citation = citation.replace(new RegExp(`{${key}}`, 'g'), value || '');
+  });
+  
+  citation = citation.replace(/\s+/g, ' ').trim();
+  citation = citation.replace(/\s+([.,])/g, '$1');
+  
+  return citation;
+}
+
+// Initialize citation preview if setting is enabled
+chrome.storage.local.get(['citationSettings'], (result) => {
+  const settings = result.citationSettings || { format: 'apa', customTemplate: '', previewEnabled: false };
+  citationPreviewEnabled = settings.previewEnabled;
+  
+  if (citationPreviewEnabled) {
+    // Wait a bit for page to load
+    setTimeout(() => {
+      createCitationPreview();
+    }, 1000);
+  }
+});

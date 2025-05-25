@@ -64,6 +64,7 @@ let closeSettingsModalBtn;
 let citationFormatSelect;
 let customFormatSection;
 let customFormatTemplate;
+let citationPreviewEnabled;
 let saveSettingsBtn;
 let cancelSettingsBtn;
 
@@ -76,7 +77,7 @@ let isRecording = false;
 let isPaused = false;
 let currentSession = null;
 let currentUrl = null;
-let citationSettings = { format: 'apa', customTemplate: '' };
+let citationSettings = { format: 'apa', customTemplate: '', previewEnabled: false };
 
 // Modal management system
 let modalStack = [];
@@ -216,6 +217,7 @@ function init() {
   citationFormatSelect = document.getElementById('citation-format');
   customFormatSection = document.getElementById('custom-format-section');
   customFormatTemplate = document.getElementById('custom-format-template');
+  citationPreviewEnabled = document.getElementById('citation-preview-enabled');
   saveSettingsBtn = document.getElementById('save-settings-btn');
   cancelSettingsBtn = document.getElementById('cancel-settings-btn');
   
@@ -1306,6 +1308,17 @@ function saveMetadata() {
         const originalText = noteTargetEl.textContent;
         noteTargetEl.textContent = 'Metadata saved successfully';
         
+        // Notify content script to update citation preview
+        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+          if (tabs.length > 0) {
+            chrome.tabs.sendMessage(tabs[0].id, {
+              action: 'metadataUpdated'
+            }).catch(() => {
+              // Ignore errors for tabs that don't have content scripts
+            });
+          }
+        });
+        
         // Reset after a short delay
         setTimeout(() => {
           noteTargetEl.textContent = originalText;
@@ -1675,6 +1688,7 @@ function loadCitationSettings() {
       citationSettings = result.citationSettings;
       citationFormatSelect.value = citationSettings.format;
       customFormatTemplate.value = citationSettings.customTemplate || '';
+      citationPreviewEnabled.checked = citationSettings.previewEnabled || false;
       
       if (citationSettings.format === 'custom') {
         customFormatSection.style.display = 'block';
@@ -1688,9 +1702,23 @@ function loadCitationSettings() {
 function saveCitationSettings() {
   citationSettings.format = citationFormatSelect.value;
   citationSettings.customTemplate = customFormatTemplate.value;
+  citationSettings.previewEnabled = citationPreviewEnabled.checked;
   
   chrome.storage.local.set({ citationSettings }, () => {
     console.log('Citation settings saved');
+    
+    // Notify all content scripts about the preview setting change
+    chrome.tabs.query({}, (tabs) => {
+      tabs.forEach(tab => {
+        chrome.tabs.sendMessage(tab.id, {
+          action: 'updateCitationPreviewSetting',
+          previewEnabled: citationSettings.previewEnabled
+        }).catch(() => {
+          // Ignore errors for tabs that don't have content scripts
+        });
+      });
+    });
+    
     closeSettingsModal();
   });
 }
