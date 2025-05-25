@@ -95,6 +95,7 @@ The `contentPages` array contains objects representing each web page visited dur
     "author": "string",              // Author information if available
     "publishDate": "string",         // Publication date if available
     "description": "string",         // Page description/excerpt
+    "quals": "string",               // Qualification information (user-entered)
     "schema": {}                     // Optional schema.org structured data if present
   },
   "notes": [                         // Optional array of notes for this page
@@ -255,7 +256,8 @@ When developing the visualization website's intake system:
         "url": "https://www.scientificamerican.com/article/sea-level-rise-projections/",
         "author": "Jane Smith",
         "publishDate": "2025-05-10",
-        "description": "Recent studies show sea levels rising faster than previously predicted..."
+        "description": "Recent studies show sea levels rising faster than previously predicted...",
+        "quals": "PhD in Climate Science, University of Cambridge"
       },
       "notes": [
         {
@@ -302,7 +304,8 @@ When developing the visualization website's intake system:
         "url": "https://www.scientificamerican.com/article/sea-level-rise-projections/",
         "author": "Jane Smith",
         "publishDate": "2025-05-10",
-        "description": "Recent studies show sea levels rising faster than previously predicted..."
+        "description": "Recent studies show sea levels rising faster than previously predicted...",
+        "quals": "PhD in Climate Science, University of Cambridge"
       },
       "notes": [
         {

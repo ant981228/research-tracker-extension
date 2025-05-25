@@ -112,6 +112,11 @@
               </select>
             </div>
             
+            <div class="form-group full-width">
+              <label for="metadata-quals">Quals:</label>
+              <textarea id="metadata-quals" rows="4" placeholder="Enter qualification information (optional)"></textarea>
+            </div>
+            
             <div class="form-group full-width" id="metadata-info">
               <!-- Dynamic info about extraction method will be inserted here -->
             </div>
@@ -221,6 +226,7 @@
                   <li><code>{url}</code> - Page URL</li>
                   <li><code>{accessDate}</code> - Today's date</li>
                   <li><code>{accessDateShort}</code> - Today's date (MM/DD/YYYY)</li>
+                  <li><code>{quals}</code> - Qualification information</li>
                 </ul>
                 <p><strong>Example:</strong> {author} ({yearShort}). {title}. {publisher}. Retrieved {accessDateShort} from {url}</p>
               </div>

@@ -3677,8 +3677,8 @@ async function updateCurrentPageMetadata(field, value) {
 document.addEventListener('keydown', async (e) => {
   console.log('Research Tracker: Key pressed:', e.key, 'Ctrl:', e.ctrlKey, 'Shift:', e.shiftKey, 'Alt:', e.altKey);
   
-  // Check for Ctrl+[1-6]
-  if (e.ctrlKey && !e.shiftKey && !e.altKey && e.key >= '1' && e.key <= '6') {
+  // Check for Ctrl+[1-7]
+  if (e.ctrlKey && !e.shiftKey && !e.altKey && e.key >= '1' && e.key <= '7') {
     console.log('Research Tracker: Ctrl+' + e.key + ' detected');
     e.preventDefault();
     e.stopPropagation();
@@ -3713,7 +3713,12 @@ document.addEventListener('keydown', async (e) => {
         parsedValue = parseAuthors(selectedText);
         break;
         
-      case '3': // Date
+      case '3': // Quals
+        field = 'quals';
+        parsedValue = originalValue; // Just trim, no parsing needed
+        break;
+        
+      case '4': // Date
         field = 'publishDate';
         const parsedDate = parseDate(selectedText);
         if (parsedDate) {
@@ -3726,20 +3731,24 @@ document.addEventListener('keydown', async (e) => {
         }
         break;
         
-      case '4': // Publisher
+      case '5': // Publisher (moved from 4)
         field = 'publisher';
         parsedValue = originalValue; // Just trim
         break;
         
-      case '5': // Journal
+      case '6': // Journal (moved from 5)
         field = 'journal';
         parsedValue = originalValue; // Just trim
         break;
         
-      case '6': // DOI
+      case '7': // DOI (moved from 6)
         field = 'doi';
         parsedValue = parseDOI(selectedText);
         break;
+        
+      default:
+        // Unknown shortcut
+        return;
     }
     
     // Update metadata
@@ -3780,8 +3789,9 @@ document.addEventListener('keydown', async (e) => {
 
 // Log that keyboard shortcuts are initialized
 console.log('Research Tracker: Keyboard shortcuts initialized.');
-console.log('  Ctrl+[1-6] with selected text during recording: Title, Author, Date, Publisher, Journal, DOI');
-console.log('  Ctrl+q : Copy citation for current page');
+console.log('  Ctrl+1: Title | Ctrl+2: Author | Ctrl+3: Quals');
+console.log('  Ctrl+4: Date | Ctrl+5: Publisher | Ctrl+6: Journal | Ctrl+7: DOI');
+console.log('  Ctrl+q: Copy citation for current page');
 
 // ===== CITATION PREVIEW FUNCTIONALITY =====
 
@@ -3999,6 +4009,7 @@ function generateCitationPreview(metadata, url, title, settings) {
     publisher: metadata.publisher || metadata.journal || new URL(url).hostname.replace('www.', ''),
     journal: metadata.journal || '',
     doi: metadata.doi || '',
+    quals: metadata.quals || '',
     url: url,
     accessDate: accessDate,
     accessDateShort: accessDateShort

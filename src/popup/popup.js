@@ -34,6 +34,7 @@ let metadataPublisher;
 let metadataType;
 let metadataJournal;
 let metadataDoi;
+let metadataQuals;
 let metadataInfo;
 let saveMetadataBtn;
 let cancelMetadataBtn;
@@ -189,6 +190,7 @@ function init() {
   metadataType = document.getElementById('metadata-type');
   metadataJournal = document.getElementById('metadata-journal');
   metadataDoi = document.getElementById('metadata-doi');
+  metadataQuals = document.getElementById('metadata-quals');
   metadataInfo = document.getElementById('metadata-info');
   saveMetadataBtn = document.getElementById('save-metadata-btn');
   cancelMetadataBtn = document.getElementById('cancel-metadata-btn');
@@ -1188,6 +1190,7 @@ function openMetadataModal() {
   metadataType.value = '';
   metadataJournal.value = '';
   metadataDoi.value = '';
+  metadataQuals.value = '';
   metadataInfo.innerHTML = '';
   
   // Fetch the current metadata for this URL if available
@@ -1218,6 +1221,7 @@ function openMetadataModal() {
       metadataType.value = currentPageMetadata.contentType || '';
       metadataJournal.value = currentPageMetadata.journal || '';
       metadataDoi.value = currentPageMetadata.doi || '';
+      metadataQuals.value = currentPageMetadata.quals || '';
       
       // Show extraction info if available
       if (currentPageMetadata.extractorType) {
@@ -1254,6 +1258,7 @@ function saveMetadata() {
     contentType: metadataType.value,
     journal: metadataJournal.value.trim(),
     doi: metadataDoi.value.trim(),
+    quals: metadataQuals.value.trim(),
     manuallyEdited: true,
     editTimestamp: new Date().toISOString()
   };
@@ -1615,6 +1620,7 @@ function generateCitation(metadata, url, format, customTemplate) {
     publisher: metadata.publisher || metadata.journal || new URL(url).hostname.replace('www.', ''),
     journal: metadata.journal || '',
     doi: metadata.doi || '',
+    quals: metadata.quals || '',
     url: url,
     accessDate: accessDate,
     accessDateShort: accessDateShort

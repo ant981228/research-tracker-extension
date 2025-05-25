@@ -478,6 +478,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                   publisher: metadata.publisher || metadata.journal || new URL(url).hostname.replace('www.', ''),
                   journal: metadata.journal || '',
                   doi: metadata.doi || '',
+                  quals: metadata.quals || '',
                   url: url,
                   accessDate: accessDate,
                   accessDateShort: accessDateShort
@@ -1411,8 +1412,20 @@ async function exportSession(sessionId, format = 'json') {
               text += `   - Publisher: ${visit.metadata.publisher}\n`;
             }
             
+            if (visit.metadata.journal) {
+              text += `   - Journal: ${visit.metadata.journal}\n`;
+            }
+            
+            if (visit.metadata.doi) {
+              text += `   - DOI: ${visit.metadata.doi}\n`;
+            }
+            
             if (visit.metadata.contentType) {
               text += `   - Content Type: ${visit.metadata.contentType}\n`;
+            }
+            
+            if (visit.metadata.quals) {
+              text += `   - Quals: ${visit.metadata.quals}\n`;
             }
             
             if (visit.metadata.description) {
