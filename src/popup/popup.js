@@ -22,8 +22,6 @@ let popoutBtn;
 let isPopout = false;
 
 // Action buttons
-let addNoteBtn;
-let editMetadataBtn;
 let viewPagesBtn;
 let viewSearchesBtn;
 
@@ -154,8 +152,6 @@ function init() {
   recentSearchesEl = document.getElementById('recent-searches');
   noteTargetEl = document.getElementById('note-target');
   noteInput = document.getElementById('note-input');
-  addNoteBtn = document.getElementById('add-note-btn');
-  editMetadataBtn = document.getElementById('edit-metadata-btn');
   sessionsList = document.getElementById('sessions-list');
   noSessionsMsg = document.getElementById('no-sessions-msg');
   
@@ -230,8 +226,6 @@ function init() {
   isPopout = false;
   
   // Add event listeners for action buttons
-  addNoteBtn.addEventListener('click', openNoteModal);
-  editMetadataBtn.addEventListener('click', openMetadataModal);
   viewPagesBtn.addEventListener('click', openPagesModal);
   viewSearchesBtn.addEventListener('click', openSearchesModal);
   
@@ -849,7 +843,6 @@ function updateRecentSearches(recentSearches) {
       </div>
       <div class="page-actions">
         <button class="page-action-btn add-note-btn">Add Note</button>
-        <button class="page-action-btn edit-metadata-btn">Edit Metadata</button>
       </div>
     `;
     
@@ -866,21 +859,6 @@ function updateRecentSearches(recentSearches) {
       
       // Open the note modal using our modal management system
       openNoteModal();
-    });
-    
-    // Add metadata button click handler
-    searchEl.querySelector('.edit-metadata-btn').addEventListener('click', (e) => {
-      e.stopPropagation(); // Prevent event bubbling
-      selectUrl(search.url, `Search: "${search.query}"`);
-      
-      // Mark this item as selected and remove selection from others
-      document.querySelectorAll('.page-item.selected').forEach(el => {
-        el.classList.remove('selected');
-      });
-      searchEl.classList.add('selected');
-      
-      // Open the metadata modal using our modal management system
-      openMetadataModal();
     });
     
     recentSearchesEl.appendChild(searchEl);
