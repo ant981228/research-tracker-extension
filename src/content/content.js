@@ -18,6 +18,7 @@ const SITE_SPECIFIC_EXTRACTORS = {
   'doi.org': extractDoiMetadata,
   'nber.org': extractNberMetadata,
   'www.nber.org': extractNberMetadata,
+  'papers.ssrn.com': extractSSRNMetadata,
   
   // News sites
   'nytimes.com': extractNYTimesMetadata,
@@ -42,6 +43,12 @@ const SITE_SPECIFIC_EXTRACTORS = {
   'link.springer.com': extractSpringerMetadata,
   'wiley.com': extractWileyMetadata,
   'onlinelibrary.wiley.com': extractWileyMetadata,
+  'dukeupress.edu': extractDukeUPressMetadata,
+  'www.dukeupress.edu': extractDukeUPressMetadata,
+  'read.dukeupress.edu': extractDukeUPressMetadata,
+  'sagepub.com': extractSageMetadata,
+  'www.sagepub.com': extractSageMetadata,
+  'journals.sagepub.com': extractSageMetadata,
   
   // Social media and forums
   'reddit.com': extractRedditMetadata,
@@ -82,6 +89,14 @@ const SITE_SPECIFIC_EXTRACTORS = {
   'www.resources.org': extractRFFMetadata,
   'hoover.org': extractHooverMetadata,
   'www.hoover.org': extractHooverMetadata,
+  'fpri.org': extractFPRIMetadata,
+  'www.fpri.org': extractFPRIMetadata,
+  'reason.org': extractReasonMetadata,
+  'www.reason.org': extractReasonMetadata,
+  'cbpp.org': extractCBPPMetadata,
+  'www.cbpp.org': extractCBPPMetadata,
+  'mercatus.org': extractMercatusMetadata,
+  'www.mercatus.org': extractMercatusMetadata,
   
   // Wikipedia
   'wikipedia.org': extractWikipediaMetadata,
@@ -155,13 +170,41 @@ function extractPageMetadata() {
     const hostname = window.location.hostname;
     let siteExtractor = SITE_SPECIFIC_EXTRACTORS[hostname];
     
+    // If not found, check if hostname contains key parts of registered domains
+    if (!siteExtractor) {
+      // Create a normalized version of hostname without punctuation
+      const normalizedHostname = hostname.replace(/[-_.]/g, '');
+      
+      // Check each registered domain
+      for (const [registeredDomain, extractor] of Object.entries(SITE_SPECIFIC_EXTRACTORS)) {
+        // Normalize the registered domain too
+        const normalizedRegistered = registeredDomain.replace(/[-_.]/g, '');
+        
+        // Check if the hostname contains all the key parts
+        if (normalizedHostname.includes(normalizedRegistered)) {
+          siteExtractor = extractor;
+          break;
+        }
+      }
+    }
+    
     // Special case for Wiley subsidiaries (e.g., agupubs.onlinelibrary.wiley.com)
     if (!siteExtractor && hostname.endsWith('.onlinelibrary.wiley.com')) {
       siteExtractor = extractWileyMetadata;
     }
     
+    // Also check hyphenated version for Wiley
+    if (!siteExtractor && hostname.includes('-onlinelibrary-wiley-com')) {
+      siteExtractor = extractWileyMetadata;
+    }
+    
     // Special case for CSIS subsidiaries (e.g., beyondparallel.csis.org)
     if (!siteExtractor && (hostname === 'csis.org' || hostname.endsWith('.csis.org'))) {
+      siteExtractor = extractCSISMetadata;
+    }
+    
+    // Also check hyphenated version for CSIS
+    if (!siteExtractor && (hostname === 'csis-org' || hostname.includes('-csis-org'))) {
       siteExtractor = extractCSISMetadata;
     }
     
@@ -3825,12 +3868,26 @@ function shouldExcludeCitationPreview() {
     'pinterest.com',
     'www.pinterest.com',
     'snapchat.com',
-    'www.snapchat.com'
+    'www.snapchat.com',
+    // SSRN download pages
+    'download.ssrn.com',
+    // HeinOnline
+    'heinonline.org',
+    'www.heinonline.org'
   ];
   
-  // Check if current hostname is in excluded list
+  // Check if current hostname is in excluded list (exact match)
   if (excludedDomains.includes(hostname)) {
     return true;
+  }
+  
+  // Check with normalized matching for proxy domains
+  const normalizedHostname = hostname.replace(/[-_.]/g, '');
+  for (const excludedDomain of excludedDomains) {
+    const normalizedExcluded = excludedDomain.replace(/[-_.]/g, '');
+    if (normalizedHostname.includes(normalizedExcluded)) {
+      return true;
+    }
   }
   
   // Check for Google search pages (various TLDs)
@@ -4164,6 +4221,419 @@ function extractNberMetadata() {
     
   } catch (e) {
     console.error('Error in NBER extractor:', e);
+  }
+  
+  return metadata;
+}
+
+// SSRN extractor
+function extractSSRNMetadata() {
+  const metadata = {};
+  
+  try {
+    // Extract title
+    const titleMeta = document.querySelector('meta[name="citation_title"]');
+    if (titleMeta) {
+      metadata.title = titleMeta.getAttribute('content').trim();
+    }
+    
+    // Extract authors with name inversion fix
+    const authorMetas = document.querySelectorAll('meta[name="citation_author"]');
+    if (authorMetas.length > 0) {
+      const authors = Array.from(authorMetas).map(meta => {
+        const authorText = meta.getAttribute('content').trim();
+        // Check if name is in "Last, First" format
+        if (authorText.includes(',')) {
+          const parts = authorText.split(',').map(p => p.trim());
+          if (parts.length === 2) {
+            // Invert to "First Last" format
+            return `${parts[1]} ${parts[0]}`;
+          }
+        }
+        return authorText;
+      });
+      metadata.authors = authors;
+      metadata.author = authors.join(', ');
+    }
+    
+    // Extract DOI
+    const doiMeta = document.querySelector('meta[name="citation_doi"]');
+    if (doiMeta) {
+      metadata.doi = doiMeta.getAttribute('content').trim();
+    }
+    
+    // Extract publication date
+    const dateMeta = document.querySelector('meta[name="citation_publication_date"]');
+    if (dateMeta) {
+      metadata.publishDate = dateMeta.getAttribute('content').trim();
+    }
+    
+    // Set publisher and content type
+    metadata.publisher = 'SSRN';
+    metadata.contentType = 'preprint';
+    
+  } catch (e) {
+    console.error('Error in SSRN extractor:', e);
+  }
+  
+  return metadata;
+}
+
+// Duke University Press extractor
+function extractDukeUPressMetadata() {
+  const metadata = {};
+  
+  try {
+    // Extract title
+    const titleMeta = document.querySelector('meta[name="citation_title"]');
+    if (titleMeta) {
+      metadata.title = titleMeta.getAttribute('content').trim();
+    }
+    
+    // Extract authors with name inversion fix
+    const authorMetas = document.querySelectorAll('meta[name="citation_author"]');
+    if (authorMetas.length > 0) {
+      const authors = Array.from(authorMetas).map(meta => {
+        const authorText = meta.getAttribute('content').trim();
+        // Check if name is in "Last, First" format
+        if (authorText.includes(',')) {
+          const parts = authorText.split(',').map(p => p.trim());
+          if (parts.length === 2) {
+            // Invert to "First Last" format
+            return `${parts[1]} ${parts[0]}`;
+          }
+        }
+        return authorText;
+      });
+      metadata.authors = authors;
+      metadata.author = authors.join(', ');
+    }
+    
+    // Extract DOI
+    const doiMeta = document.querySelector('meta[name="citation_doi"]');
+    if (doiMeta) {
+      metadata.doi = doiMeta.getAttribute('content').trim();
+    }
+    
+    // Extract publication date
+    const dateMeta = document.querySelector('meta[name="citation_publication_date"]');
+    if (dateMeta) {
+      metadata.publishDate = dateMeta.getAttribute('content').trim();
+    }
+    
+    // Extract journal
+    const journalMeta = document.querySelector('meta[name="citation_journal_title"]');
+    if (journalMeta) {
+      metadata.journal = journalMeta.getAttribute('content').trim();
+    }
+    
+    // Extract volume, issue, pages
+    const volumeMeta = document.querySelector('meta[name="citation_volume"]');
+    if (volumeMeta) {
+      metadata.volume = volumeMeta.getAttribute('content').trim();
+    }
+    
+    const issueMeta = document.querySelector('meta[name="citation_issue"]');
+    if (issueMeta) {
+      metadata.issue = issueMeta.getAttribute('content').trim();
+    }
+    
+    // Extract PDF URL
+    const pdfMeta = document.querySelector('meta[name="citation_pdf_url"]');
+    if (pdfMeta) {
+      metadata.pdfUrl = pdfMeta.getAttribute('content').trim();
+    }
+    
+    // Set publisher and content type
+    metadata.publisher = 'Duke University Press';
+    metadata.contentType = 'journal-article';
+    
+  } catch (e) {
+    console.error('Error in Duke University Press extractor:', e);
+  }
+  
+  return metadata;
+}
+
+// Sage Publications extractor
+function extractSageMetadata() {
+  const metadata = {};
+  
+  try {
+    // Extract title from dc.Title
+    const titleMeta = document.querySelector('meta[name="dc.Title"]');
+    if (titleMeta) {
+      metadata.title = titleMeta.getAttribute('content').trim();
+    }
+    
+    // Extract authors from dc.Creator (may be multiple)
+    const authorMetas = document.querySelectorAll('meta[name="dc.Creator"]');
+    if (authorMetas.length > 0) {
+      const authors = Array.from(authorMetas).map(meta => meta.getAttribute('content').trim());
+      metadata.authors = authors;
+      metadata.author = authors.join(', ');
+    }
+    
+    // Extract DOI from dc.Identifier
+    const doiMeta = document.querySelector('meta[name="dc.Identifier"][scheme="doi"]');
+    if (doiMeta) {
+      metadata.doi = doiMeta.getAttribute('content').trim();
+    }
+    
+    // Extract journal title
+    const journalMeta = document.querySelector('meta[name="citation_journal_title"]');
+    if (journalMeta) {
+      metadata.journal = journalMeta.getAttribute('content').trim();
+    }
+    
+    // Extract publication date from article:published_time
+    const dateMeta = document.querySelector('meta[property="article:published_time - datetime"]');
+    if (dateMeta) {
+      const dateContent = dateMeta.getAttribute('content').trim();
+      // Convert date format if needed (e.g., "February 18, 2025" to ISO format)
+      try {
+        const date = new Date(dateContent);
+        if (!isNaN(date.getTime())) {
+          metadata.publishDate = date.toISOString().split('T')[0];
+        } else {
+          metadata.publishDate = dateContent;
+        }
+      } catch (e) {
+        metadata.publishDate = dateContent;
+      }
+    }
+    
+    // Set publisher and content type
+    metadata.publisher = 'Sage Journals';
+    metadata.contentType = 'journal-article';
+    
+  } catch (e) {
+    console.error('Error in Sage extractor:', e);
+  }
+  
+  return metadata;
+}
+
+// Reason extractor
+function extractReasonMetadata() {
+  const metadata = {};
+  
+  try {
+    // Extract title from og:title or Twitter title
+    const ogTitle = document.querySelector('meta[property="og:title"]');
+    if (ogTitle) {
+      metadata.title = ogTitle.getAttribute('content').trim();
+    } else {
+      const twitterTitle = document.querySelector('meta[name="twitter:title"]');
+      if (twitterTitle) {
+        metadata.title = twitterTitle.getAttribute('content').trim();
+      }
+    }
+    
+    // Extract author from Twitter meta tags
+    // Look for twitter:label2="Written by" and twitter:data2="Author Name"
+    const twitterLabels = document.querySelectorAll('meta[name^="twitter:label"]');
+    for (let i = 0; i < twitterLabels.length; i++) {
+      const label = twitterLabels[i];
+      if (label.getAttribute('content') === 'Written by') {
+        // Extract the number from the label name (e.g., "twitter:label2" -> "2")
+        const labelNum = label.getAttribute('name').match(/twitter:label(\d+)/);
+        if (labelNum) {
+          // Find the corresponding data meta tag
+          const dataTag = document.querySelector(`meta[name="twitter:data${labelNum[1]}"]`);
+          if (dataTag) {
+            metadata.author = dataTag.getAttribute('content').trim();
+            break;
+          }
+        }
+      }
+    }
+    
+    // Extract publication date
+    const datePublished = document.querySelector('meta[property="article:published_time"]');
+    if (datePublished) {
+      const dateContent = datePublished.getAttribute('content');
+      try {
+        const date = new Date(dateContent);
+        if (!isNaN(date.getTime())) {
+          metadata.publishDate = date.toISOString().split('T')[0];
+        } else {
+          metadata.publishDate = dateContent;
+        }
+      } catch (e) {
+        metadata.publishDate = dateContent;
+      }
+    }
+    
+    // Extract description
+    const description = document.querySelector('meta[property="og:description"]');
+    if (description) {
+      metadata.description = description.getAttribute('content').trim();
+    }
+    
+    // Set publisher and content type
+    metadata.publisher = 'Reason';
+    metadata.contentType = 'article';
+    
+  } catch (e) {
+    console.error('Error in Reason extractor:', e);
+  }
+  
+  return metadata;
+}
+
+// CBPP (Center on Budget and Policy Priorities) extractor
+function extractCBPPMetadata() {
+  const metadata = {};
+  
+  try {
+    // Extract title from og:title or page title
+    const ogTitle = document.querySelector('meta[property="og:title"]');
+    if (ogTitle) {
+      let title = ogTitle.getAttribute('content').trim();
+      // Remove "| Center on Budget and Policy Priorities" suffix if present
+      title = title.replace(/\s*\|\s*Center on Budget and Policy Priorities\s*$/i, '');
+      metadata.title = title;
+    } else {
+      const h1Title = document.querySelector('h1');
+      if (h1Title) {
+        metadata.title = h1Title.textContent.trim();
+      }
+    }
+    
+    // Extract date from time element in byline wrapper
+    const timeElement = document.querySelector('.layout--wrapper--byline time.datetime');
+    if (timeElement) {
+      const dateContent = timeElement.getAttribute('datetime');
+      if (dateContent) {
+        try {
+          const date = new Date(dateContent);
+          if (!isNaN(date.getTime())) {
+            metadata.publishDate = date.toISOString().split('T')[0];
+          } else {
+            metadata.publishDate = timeElement.textContent.trim();
+          }
+        } catch (e) {
+          metadata.publishDate = timeElement.textContent.trim();
+        }
+      } else {
+        metadata.publishDate = timeElement.textContent.trim();
+      }
+    }
+    
+    // Extract authors from individual-author spans
+    const authorElements = document.querySelectorAll('.rich-content-author a[rel="author"] .individual-author');
+    if (authorElements.length > 0) {
+      const authors = Array.from(authorElements).map(el => el.textContent.trim());
+      metadata.authors = authors;
+      metadata.author = authors.join(', ');
+    }
+    
+    // Extract description
+    const description = document.querySelector('meta[property="og:description"]');
+    if (description) {
+      metadata.description = description.getAttribute('content').trim();
+    }
+    
+    // Set publisher and content type
+    metadata.publisher = 'Center on Budget and Policy Priorities';
+    metadata.contentType = 'report';
+    
+  } catch (e) {
+    console.error('Error in CBPP extractor:', e);
+  }
+  
+  return metadata;
+}
+
+// Mercatus Center extractor
+function extractMercatusMetadata() {
+  const metadata = {};
+  
+  try {
+    // Extract authors from the byline container
+    const authorLinks = document.querySelectorAll('.coh-style-byline ul.coh-style-comma-separated-elements li a');
+    if (authorLinks.length > 0) {
+      const authors = Array.from(authorLinks).map(link => link.textContent.trim());
+      metadata.authors = authors;
+      metadata.author = authors.join(', ');
+    }
+    
+    // Set publisher
+    metadata.publisher = 'Mercatus Center';
+    
+    // Set content type - Mercatus produces mainly research papers and policy briefs
+    metadata.contentType = 'report';
+    
+  } catch (e) {
+    console.error('Error in Mercatus extractor:', e);
+  }
+  
+  // Return metadata - generic extractors will handle title, date, etc.
+  return metadata;
+}
+
+// FPRI (Foreign Policy Research Institute) extractor
+function extractFPRIMetadata() {
+  const metadata = {};
+  
+  try {
+    // Extract title - try og:title first
+    const ogTitleMeta = document.querySelector('meta[property="og:title"]');
+    if (ogTitleMeta) {
+      let title = ogTitleMeta.getAttribute('content').trim();
+      // Remove " - Foreign Policy Research Institute" suffix if present
+      title = title.replace(/\s*-\s*Foreign Policy Research Institute\s*$/i, '');
+      metadata.title = title;
+    }
+    
+    // If no og:title, try the h2 caption
+    if (!metadata.title) {
+      const h2Title = document.querySelector('h2.caption-article');
+      if (h2Title) {
+        metadata.title = h2Title.textContent.trim();
+      }
+    }
+    
+    // Extract authors and date from meta-desc list
+    const metaDescList = document.querySelector('ul.meta-desc.meta-desc-article');
+    if (metaDescList) {
+      // Look for all author links
+      const authorLinks = metaDescList.querySelectorAll('a.author');
+      if (authorLinks.length > 0) {
+        const authors = Array.from(authorLinks).map(link => link.textContent.trim());
+        metadata.authors = authors;
+        metadata.author = authors.join(', ');
+      }
+      
+      // Look for date in span
+      const listItems = metaDescList.querySelectorAll('li');
+      for (const li of listItems) {
+        const dateSpan = li.querySelector('span');
+        if (dateSpan && !li.querySelector('a')) { // Make sure it's not part of a link
+          const dateText = dateSpan.textContent.trim();
+          // Parse date like "May 15, 2025" or "April 30, 2025"
+          try {
+            const date = new Date(dateText);
+            if (!isNaN(date.getTime())) {
+              metadata.publishDate = date.toISOString().split('T')[0];
+            } else {
+              metadata.publishDate = dateText;
+            }
+          } catch (e) {
+            metadata.publishDate = dateText;
+          }
+          break;
+        }
+      }
+    }
+    
+    // Set publisher and content type
+    metadata.publisher = 'Foreign Policy Research Institute';
+    metadata.contentType = 'report';
+    
+  } catch (e) {
+    console.error('Error in FPRI extractor:', e);
   }
   
   return metadata;
