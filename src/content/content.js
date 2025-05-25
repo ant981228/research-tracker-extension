@@ -3795,7 +3795,62 @@ console.log('  Ctrl+q: Copy citation for current page');
 
 // ===== CITATION PREVIEW FUNCTIONALITY =====
 
+function shouldExcludeCitationPreview() {
+  const url = window.location.href;
+  const hostname = window.location.hostname;
+  
+  // Check if URL ends with .pdf
+  if (url.toLowerCase().endsWith('.pdf')) {
+    return true;
+  }
+  
+  // Specific site exclusions
+  const excludedDomains = [
+    'ant981228.github.io',
+    'youtube.com',
+    'www.youtube.com',
+    'facebook.com',
+    'www.facebook.com',
+    'google.com',
+    'www.google.com',
+    'scholar.google.com',
+    'bing.com',
+    'www.bing.com',
+    'yahoo.com',
+    'www.yahoo.com',
+    'duckduckgo.com',
+    'www.duckduckgo.com',
+    // Social media sites (except reddit, twitter/x, linkedin, and tumblr)
+    'instagram.com',
+    'www.instagram.com',
+    'tiktok.com',
+    'www.tiktok.com',
+    'pinterest.com',
+    'www.pinterest.com',
+    'snapchat.com',
+    'www.snapchat.com'
+  ];
+  
+  // Check if current hostname is in excluded list
+  if (excludedDomains.includes(hostname)) {
+    return true;
+  }
+  
+  // Check for Google search pages (various TLDs)
+  if (hostname.match(/^(www\.)?google\.[a-z.]+$/) && url.includes('/search')) {
+    return true;
+  }
+  
+  return false;
+}
+
 function createCitationPreview() {
+  // Check if this site should be excluded
+  if (shouldExcludeCitationPreview()) {
+    console.log('Research Tracker: Citation preview disabled for this site');
+    return;
+  }
+  
   // Remove existing preview if it exists
   removeCitationPreview();
   
