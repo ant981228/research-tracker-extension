@@ -16,6 +16,8 @@ const SITE_SPECIFIC_EXTRACTORS = {
   'jstor.org': extractJstorMetadata,
   'www.jstor.org': extractJstorMetadata,
   'doi.org': extractDoiMetadata,
+  'nber.org': extractNberMetadata,
+  'www.nber.org': extractNberMetadata,
   
   // News sites
   'nytimes.com': extractNYTimesMetadata,
@@ -4108,3 +4110,61 @@ setTimeout(() => {
     });
   }
 }, 1500); // Wait a bit for page to fully load
+
+// NBER extractor
+function extractNberMetadata() {
+  const metadata = {};
+  
+  try {
+    // Extract title from citation meta tag
+    const titleMeta = document.querySelector('meta[name="citation_title"]');
+    if (titleMeta) {
+      metadata.title = titleMeta.getAttribute('content').trim();
+    }
+    
+    // Extract authors from citation meta tags (multiple possible)
+    const authorMetas = document.querySelectorAll('meta[name="citation_author"]');
+    if (authorMetas.length > 0) {
+      const authors = Array.from(authorMetas).map(meta => meta.getAttribute('content').trim());
+      metadata.authors = authors;
+      metadata.author = authors.join(', ');
+    }
+    
+    // Extract DOI
+    const doiMeta = document.querySelector('meta[name="citation_doi"]');
+    if (doiMeta) {
+      metadata.doi = doiMeta.getAttribute('content').trim();
+    }
+    
+    // Extract PDF URL
+    const pdfMeta = document.querySelector('meta[name="citation_pdf_url"]');
+    if (pdfMeta) {
+      metadata.pdfUrl = pdfMeta.getAttribute('content').trim();
+    }
+    
+    // Extract publication date
+    const dateMeta = document.querySelector('meta[name="citation_publication_date"]');
+    if (dateMeta) {
+      metadata.publishDate = dateMeta.getAttribute('content').trim();
+    }
+    
+    // Extract publisher/institution
+    const institutionMeta = document.querySelector('meta[name="citation_technical_report_institution"]');
+    if (institutionMeta) {
+      metadata.publisher = institutionMeta.getAttribute('content').trim();
+    }
+    
+    // Set content type and other standard fields
+    metadata.contentType = 'report';
+    
+    // Fallback publisher if not found in meta tag
+    if (!metadata.publisher) {
+      metadata.publisher = 'National Bureau of Economic Research';
+    }
+    
+  } catch (e) {
+    console.error('Error in NBER extractor:', e);
+  }
+  
+  return metadata;
+}
