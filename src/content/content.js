@@ -3418,3 +3418,281 @@ function extractHooverMetadata() {
   
   return metadata;
 }
+
+// ===== KEYBOARD SHORTCUT FUNCTIONALITY =====
+
+// Toast notification system
+function showToast(message, type = 'success') {
+  // Remove any existing toast
+  const existingToast = document.querySelector('.research-tracker-toast');
+  if (existingToast) {
+    existingToast.remove();
+  }
+  
+  // Create toast element
+  const toast = document.createElement('div');
+  toast.className = 'research-tracker-toast';
+  toast.textContent = message;
+  
+  // Set colors based on type
+  let backgroundColor;
+  switch (type) {
+    case 'error':
+      backgroundColor = '#dc3545'; // Red
+      break;
+    case 'warning':
+      backgroundColor = '#ffc107'; // Yellow
+      break;
+    default: // 'success'
+      backgroundColor = '#28a745'; // Green
+  }
+  
+  // Add styles
+  toast.style.cssText = `
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    background-color: ${backgroundColor};
+    color: ${type === 'warning' ? '#000' : '#fff'};
+    padding: 12px 20px;
+    border-radius: 4px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+    z-index: 9999;
+    font-family: Arial, sans-serif;
+    font-size: 14px;
+    max-width: 300px;
+    word-wrap: break-word;
+    animation: slideIn 0.3s ease-out;
+  `;
+  
+  // Add animation
+  const style = document.createElement('style');
+  style.textContent = `
+    @keyframes slideIn {
+      from {
+        transform: translateX(100%);
+        opacity: 0;
+      }
+      to {
+        transform: translateX(0);
+        opacity: 1;
+      }
+    }
+    @keyframes slideOut {
+      from {
+        transform: translateX(0);
+        opacity: 1;
+      }
+      to {
+        transform: translateX(100%);
+        opacity: 0;
+      }
+    }
+  `;
+  document.head.appendChild(style);
+  
+  document.body.appendChild(toast);
+  
+  // Remove toast after 3 seconds
+  setTimeout(() => {
+    toast.style.animation = 'slideOut 0.3s ease-out';
+    setTimeout(() => {
+      toast.remove();
+      style.remove();
+    }, 300);
+  }, 3000);
+}
+
+// Text parsing functions
+function parseTitle(text) {
+  // Convert to title case
+  const smallWords = ['a', 'an', 'and', 'as', 'at', 'but', 'by', 'for', 'from', 
+                      'in', 'into', 'nor', 'of', 'on', 'or', 'the', 'to', 'with'];
+  
+  return text.trim()
+    .toLowerCase()
+    .split(' ')
+    .map((word, index) => {
+      // Always capitalize first and last word
+      if (index === 0 || index === text.trim().split(' ').length - 1) {
+        return word.charAt(0).toUpperCase() + word.slice(1);
+      }
+      // Don't capitalize small words
+      if (smallWords.includes(word)) {
+        return word;
+      }
+      // Capitalize everything else
+      return word.charAt(0).toUpperCase() + word.slice(1);
+    })
+    .join(' ');
+}
+
+function parseAuthors(text) {
+  // Handle various author formats
+  let authors = text.trim();
+  
+  // Replace "and" with comma
+  authors = authors.replace(/\s+and\s+/gi, ', ');
+  
+  // Split by comma and clean each author
+  const authorList = authors.split(',').map(a => a.trim()).filter(a => a);
+  
+  // Return as comma-separated string
+  return authorList.join(', ');
+}
+
+function parseDate(text) {
+  const dateStr = text.trim();
+  
+  // Try to parse the date
+  const parsedDate = new Date(dateStr);
+  
+  if (!isNaN(parsedDate.getTime())) {
+    // Return in YYYY-MM-DD format
+    return parsedDate.toISOString().split('T')[0];
+  }
+  
+  // Try some common date patterns
+  const patterns = [
+    // MM/DD/YYYY or MM-DD-YYYY
+    /(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/,
+    // DD/MM/YYYY or DD-MM-YYYY (European format)
+    /(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/,
+    // Month DD, YYYY
+    /(\w+)\s+(\d{1,2}),?\s+(\d{4})/,
+    // DD Month YYYY
+    /(\d{1,2})\s+(\w+)\s+(\d{4})/,
+    // YYYY-MM-DD (ISO format)
+    /(\d{4})-(\d{1,2})-(\d{1,2})/
+  ];
+  
+  // If parsing failed, return original text
+  return null;
+}
+
+function parseDOI(text) {
+  const doiStr = text.trim();
+  
+  // Extract DOI from various formats
+  const doiPattern = /10\.\d{4,}(?:\.\d+)*\/[-._;()\/:A-Za-z0-9]+/;
+  const match = doiStr.match(doiPattern);
+  
+  if (match) {
+    return match[0];
+  }
+  
+  // If it's already a clean DOI
+  if (doiStr.startsWith('10.')) {
+    return doiStr;
+  }
+  
+  // Return cleaned text
+  return doiStr.replace(/^doi:\s*/i, '').trim();
+}
+
+// Check if currently recording
+async function isCurrentlyRecording() {
+  return new Promise((resolve) => {
+    chrome.storage.local.get(['isRecording'], (result) => {
+      resolve(!!result.isRecording);
+    });
+  });
+}
+
+// Update metadata for current page
+async function updateCurrentPageMetadata(field, value) {
+  const url = window.location.href;
+  
+  // Send message to background script to update metadata
+  chrome.runtime.sendMessage({
+    action: 'updatePageMetadata',
+    url: url,
+    metadata: { [field]: value }
+  }, (response) => {
+    if (response && response.success) {
+      console.log(`Updated ${field} to:`, value);
+    } else {
+      console.error('Failed to update metadata:', response);
+    }
+  });
+}
+
+// Keyboard shortcut handler
+document.addEventListener('keydown', async (e) => {
+  // Check for Ctrl+[1-6]
+  if (e.ctrlKey && !e.shiftKey && !e.altKey && e.key >= '1' && e.key <= '6') {
+    console.log('Research Tracker: Ctrl+' + e.key + ' detected');
+    e.preventDefault();
+    e.stopPropagation();
+    e.stopImmediatePropagation();
+    
+    // Check if recording
+    const recording = await isCurrentlyRecording();
+    console.log('Research Tracker: Recording status:', recording);
+    if (!recording) {
+      console.log('Research Tracker: Not recording, ignoring shortcut');
+      return; // Only work during recording sessions
+    }
+    
+    // Get selected text
+    const selectedText = window.getSelection().toString();
+    console.log('Research Tracker: Selected text:', selectedText);
+    if (!selectedText) {
+      showToast('No text selected', 'error');
+      return;
+    }
+    
+    let field, parsedValue, originalValue = selectedText.trim();
+    
+    switch (e.key) {
+      case '1': // Title
+        field = 'title';
+        parsedValue = parseTitle(selectedText);
+        break;
+        
+      case '2': // Author
+        field = 'author';
+        parsedValue = parseAuthors(selectedText);
+        break;
+        
+      case '3': // Date
+        field = 'publishDate';
+        const parsedDate = parseDate(selectedText);
+        if (parsedDate) {
+          parsedValue = parsedDate;
+        } else {
+          parsedValue = originalValue;
+          showToast(`Date parsing failed - stored as: ${originalValue}`, 'warning');
+          await updateCurrentPageMetadata(field, parsedValue);
+          return;
+        }
+        break;
+        
+      case '4': // Publisher
+        field = 'publisher';
+        parsedValue = originalValue; // Just trim
+        break;
+        
+      case '5': // Journal
+        field = 'journal';
+        parsedValue = originalValue; // Just trim
+        break;
+        
+      case '6': // DOI
+        field = 'doi';
+        parsedValue = parseDOI(selectedText);
+        break;
+    }
+    
+    // Update metadata
+    await updateCurrentPageMetadata(field, parsedValue);
+    
+    // Show success toast
+    const fieldName = field.charAt(0).toUpperCase() + field.slice(1).replace(/([A-Z])/g, ' $1');
+    showToast(`${fieldName} updated: ${parsedValue}`);
+  }
+}, true); // Use capture phase
+
+// Log that keyboard shortcuts are initialized
+console.log('Research Tracker: Keyboard shortcuts initialized. Use Ctrl+[1-6] with selected text during recording:');
+console.log('  Ctrl+1: Title | Ctrl+2: Author | Ctrl+3: Date | Ctrl+4: Publisher | Ctrl+5: Journal | Ctrl+6: DOI');
