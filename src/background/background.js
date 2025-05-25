@@ -372,6 +372,162 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       
       console.log('closePopout message handler returning true for async response');
       return true; // Indicates async response
+      
+    case 'copyCitationForCurrentPage':
+      console.log('Received copyCitationForCurrentPage message');
+      // Get the current active tab
+      chrome.tabs.query({ active: true, currentWindow: true }, async (tabs) => {
+        if (tabs.length === 0) {
+          sendResponse({ success: false, error: 'No active tab found' });
+          return;
+        }
+        
+        const currentTab = tabs[0];
+        const url = currentTab.url;
+        
+        // Get metadata for the current page
+        const metadata = getPageMetadataForUrl(url);
+        
+        // Get citation settings from storage
+        chrome.storage.local.get(['citationSettings'], async (result) => {
+          const settings = result.citationSettings || { format: 'apa', customTemplate: '' };
+          
+          try {
+            // Inject a script to generate and copy the citation
+            const result = await chrome.scripting.executeScript({
+              target: { tabId: currentTab.id },
+              func: (metadata, url, title, settings) => {
+                // This function runs in the content script context
+                // We need to recreate the citation generation logic here
+                const citationFormats = {
+                  apa: '{author} ({year}). {title}. {publisher}. {url ? "Retrieved {accessDate} from {url}" : ""}',
+                  mla: '{author}. "{title}." {publisher}, {day} {month} {year}, {url}.',
+                  chicago: '{author}. "{title}." {publisher}, {month} {day}, {year}. {url}.',
+                  harvard: '{author} {year}, {title}, {publisher}, viewed {accessDate}, <{url}>.',
+                  ieee: '{author}, "{title}," {publisher}, {year}. [Online]. Available: {url}. [Accessed: {accessDate}].'
+                };
+                
+                // Helper functions (simplified versions)
+                const formatDateParts = (dateStr) => {
+                  if (!dateStr) return { year: 'n.d.', yearShort: 'n.d.', month: '', monthNum: '', day: '', date: 'n.d.' };
+                  const date = new Date(dateStr);
+                  if (isNaN(date.getTime())) return { year: dateStr, yearShort: dateStr, month: '', monthNum: '', day: '', date: dateStr };
+                  
+                  const year = date.getFullYear().toString();
+                  const yearShort = year.slice(-2);
+                  const monthNum = String(date.getMonth() + 1).padStart(2, '0');
+                  const day = String(date.getDate()).padStart(2, '0');
+                  
+                  return {
+                    year: year,
+                    yearShort: yearShort,
+                    month: date.toLocaleDateString('en-US', { month: 'long' }),
+                    monthNum: monthNum,
+                    day: day,
+                    date: `${monthNum}/${day}/${year}`
+                  };
+                };
+                
+                const formatAuthors = (authorStr, format) => {
+                  if (!authorStr) return { full: 'Unknown Author', short: 'Unknown Author' };
+                  const authors = authorStr.split(',').map(a => a.trim());
+                  
+                  let formattedAuthors = authors;
+                  if (format === 'apa' || format === 'harvard') {
+                    formattedAuthors = authors.map(author => {
+                      const parts = author.split(' ');
+                      if (parts.length >= 2) {
+                        const lastName = parts[parts.length - 1];
+                        const initials = parts.slice(0, -1).map(n => n[0] + '.').join(' ');
+                        return `${lastName}, ${initials}`;
+                      }
+                      return author;
+                    });
+                  }
+                  
+                  let shortVersion;
+                  if (authors.length === 1) {
+                    shortVersion = formattedAuthors[0];
+                  } else if (authors.length === 2) {
+                    shortVersion = formattedAuthors.join(' & ');
+                  } else {
+                    shortVersion = formattedAuthors[0] + ' et al.';
+                  }
+                  
+                  return { full: formattedAuthors.join(', '), short: shortVersion };
+                };
+                
+                // Generate citation
+                const template = settings.format === 'custom' ? settings.customTemplate : citationFormats[settings.format];
+                const dateParts = formatDateParts(metadata.date || metadata.publishDate);
+                const today = new Date();
+                const accessDate = today.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+                const accessDateShort = `${String(today.getMonth() + 1).padStart(2, '0')}/${String(today.getDate()).padStart(2, '0')}/${today.getFullYear()}`;
+                const authorFormats = formatAuthors(metadata.author, settings.format);
+                
+                const variables = {
+                  author: authorFormats.full,
+                  authorShort: authorFormats.short,
+                  year: dateParts.year,
+                  yearShort: dateParts.yearShort,
+                  month: dateParts.month,
+                  monthNum: dateParts.monthNum,
+                  day: dateParts.day,
+                  date: dateParts.date,
+                  title: metadata.title || title || 'Untitled',
+                  publisher: metadata.publisher || metadata.journal || new URL(url).hostname.replace('www.', ''),
+                  journal: metadata.journal || '',
+                  doi: metadata.doi || '',
+                  url: url,
+                  accessDate: accessDate,
+                  accessDateShort: accessDateShort
+                };
+                
+                let citation = template;
+                Object.entries(variables).forEach(([key, value]) => {
+                  const conditionalRegex = new RegExp(`{${key}\\s*\\?\\s*"([^"]*)"\\s*:\\s*"([^"]*)"\\s*}`, 'g');
+                  citation = citation.replace(conditionalRegex, value ? '$1' : '$2');
+                  citation = citation.replace(new RegExp(`{${key}}`, 'g'), value || '');
+                });
+                
+                citation = citation.replace(/\s+/g, ' ').trim();
+                citation = citation.replace(/\s+([.,])/g, '$1');
+                
+                // Check for missing fields
+                const missingFields = [];
+                if (!metadata.title && !title) missingFields.push('title');
+                if (!metadata.author) missingFields.push('author');
+                if (!metadata.date && !metadata.publishDate) missingFields.push('date');
+                if (!metadata.publisher && !metadata.journal) missingFields.push('publisher/journal');
+                
+                // Copy to clipboard
+                navigator.clipboard.writeText(citation);
+                
+                return {
+                  citation: citation,
+                  missingFields: missingFields
+                };
+              },
+              args: [metadata, url, currentTab.title, settings]
+            });
+            
+            // Extract the result from the script execution
+            const scriptResult = result[0]?.result;
+            if (scriptResult) {
+              sendResponse({ 
+                success: true, 
+                missingFields: scriptResult.missingFields 
+              });
+            } else {
+              sendResponse({ success: true });
+            }
+          } catch (error) {
+            console.error('Error copying citation:', error);
+            sendResponse({ success: false, error: error.message });
+          }
+        });
+      });
+      return true; // Indicates async response
   }
 });
 

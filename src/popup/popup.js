@@ -57,6 +57,16 @@ let searchesModal;
 let closeSearchesModalBtn;
 let closeSearchesBtn;
 
+// Settings Modal Elements
+let settingsBtn;
+let settingsModal;
+let closeSettingsModalBtn;
+let citationFormatSelect;
+let customFormatSection;
+let customFormatTemplate;
+let saveSettingsBtn;
+let cancelSettingsBtn;
+
 // Current session state
 let selectedPageUrl = null;
 let addNoteInProgress = false;
@@ -66,6 +76,7 @@ let isRecording = false;
 let isPaused = false;
 let currentSession = null;
 let currentUrl = null;
+let citationSettings = { format: 'apa', customTemplate: '' };
 
 // Modal management system
 let modalStack = [];
@@ -89,6 +100,10 @@ function showModal(modal, type) {
     modalStack.push('metadata');
     metadataModal.classList.add('hidden');
     metadataModal.style.display = 'none';
+  } else if (settingsModal && settingsModal.style.display === 'flex') {
+    modalStack.push('settings');
+    settingsModal.classList.add('hidden');
+    settingsModal.style.display = 'none';
   }
   
   // Show the new modal
@@ -111,6 +126,9 @@ function hideCurrentModal() {
   } else if (metadataModal.style.display === 'flex') {
     metadataModal.classList.add('hidden');
     metadataModal.style.display = 'none';
+  } else if (settingsModal && settingsModal.style.display === 'flex') {
+    settingsModal.classList.add('hidden');
+    settingsModal.style.display = 'none';
   }
   
   // If there's a previous modal in the stack, show it
@@ -129,6 +147,9 @@ function hideCurrentModal() {
     } else if (previousModal === 'metadata') {
       metadataModal.classList.remove('hidden');
       metadataModal.style.display = 'flex';
+    } else if (previousModal === 'settings') {
+      settingsModal.classList.remove('hidden');
+      settingsModal.style.display = 'flex';
     }
   }
   
@@ -187,6 +208,16 @@ function init() {
   searchesModal = document.getElementById('searches-modal');
   closeSearchesModalBtn = document.querySelector('.close-searches-modal');
   closeSearchesBtn = document.getElementById('close-searches-btn');
+  
+  // Initialize settings modal elements
+  settingsBtn = document.getElementById('settings-btn');
+  settingsModal = document.getElementById('settings-modal');
+  closeSettingsModalBtn = document.querySelector('.close-settings-modal');
+  citationFormatSelect = document.getElementById('citation-format');
+  customFormatSection = document.getElementById('custom-format-section');
+  customFormatTemplate = document.getElementById('custom-format-template');
+  saveSettingsBtn = document.getElementById('save-settings-btn');
+  cancelSettingsBtn = document.getElementById('cancel-settings-btn');
   
   // Action buttons
   viewPagesBtn = document.getElementById('view-pages-btn');
@@ -247,6 +278,25 @@ function init() {
   closeSearchesBtn.addEventListener('click', closeSearchesModal);
   closeSearchesModalBtn.addEventListener('click', closeSearchesModal);
   
+  // Settings button and modal event listeners
+  settingsBtn.addEventListener('click', () => {
+    showModal(settingsModal, 'settings');
+    loadCitationSettings();
+  });
+  
+  closeSettingsModalBtn.addEventListener('click', closeSettingsModal);
+  cancelSettingsBtn.addEventListener('click', closeSettingsModal);
+  saveSettingsBtn.addEventListener('click', saveCitationSettings);
+  
+  // Citation format dropdown change handler
+  citationFormatSelect.addEventListener('change', (e) => {
+    if (e.target.value === 'custom') {
+      customFormatSection.style.display = 'block';
+    } else {
+      customFormatSection.style.display = 'none';
+    }
+  });
+  
   // Update activity status when interacting with the popup
   document.addEventListener('click', updateActivityStatus);
   document.addEventListener('keydown', updateActivityStatus);
@@ -268,6 +318,7 @@ function init() {
     if (event.target === noteModal) closeNoteModal();
     if (event.target === pagesModal) closePagesModal();
     if (event.target === searchesModal) closeSearchesModal();
+    if (event.target === settingsModal) closeSettingsModal();
   });
   
   // Add click handler for session renaming
@@ -284,6 +335,9 @@ function init() {
   
   // Load previous sessions
   loadSessionsAndDisplay();
+  
+  // Load citation settings
+  loadCitationSettings();
 }
 
 // Function to update activity status in the background
@@ -400,6 +454,7 @@ function updatePageDisplay(url) {
           <div class="page-actions">
             <button class="page-action-btn add-note-btn">Add Note</button>
             <button class="page-action-btn edit-metadata-btn">Edit Metadata</button>
+            <button class="page-action-btn copy-citation-btn">Copy Citation</button>
           </div>
         `;
         
@@ -427,6 +482,12 @@ function updatePageDisplay(url) {
           
           // Open the metadata modal
           openMetadataModal();
+        });
+        
+        // Set up copy citation button handler
+        currentPageEl.querySelector('.copy-citation-btn').addEventListener('click', (e) => {
+          e.stopPropagation(); // Prevent event bubbling
+          copyCitation(tab.url, pageTitle, e.target);
         });
       });
       
@@ -782,6 +843,7 @@ function updateRecentPages(recentPages) {
         <div class="page-actions">
           <button class="page-action-btn add-note-btn">Add Note</button>
           <button class="page-action-btn edit-metadata-btn">Edit Metadata</button>
+          <button class="page-action-btn copy-citation-btn">Copy Citation</button>
         </div>
       `;
       
@@ -813,6 +875,12 @@ function updateRecentPages(recentPages) {
         
         // Open the metadata modal using our modal management system
         openMetadataModal();
+      });
+      
+      // Add copy citation button click handler
+      pageEl.querySelector('.copy-citation-btn').addEventListener('click', (e) => {
+        e.stopPropagation(); // Prevent event bubbling
+        copyCitation(page.url, pageTitle, e.target);
       });
       
       recentPagesEl.appendChild(pageEl);
@@ -1398,3 +1466,235 @@ function togglePopout() {
   }
 }
 */
+
+// Citation format templates
+const citationFormats = {
+  apa: '{author} ({year}). {title}. {publisher}. {url ? "Retrieved {accessDate} from {url}" : ""}',
+  mla: '{author}. "{title}." {publisher}, {day} {month} {year}, {url}.',
+  chicago: '{author}. "{title}." {publisher}, {month} {day}, {year}. {url}.',
+  harvard: '{author} {year}, {title}, {publisher}, viewed {accessDate}, <{url}>.',
+  ieee: '{author}, "{title}," {publisher}, {year}. [Online]. Available: {url}. [Accessed: {accessDate}].'
+};
+
+// Function to format date parts
+function formatDateParts(dateStr) {
+  if (!dateStr) return { 
+    year: 'n.d.', 
+    yearShort: 'n.d.',
+    month: '', 
+    monthNum: '',
+    day: '',
+    date: 'n.d.'
+  };
+  
+  const date = new Date(dateStr);
+  if (isNaN(date.getTime())) {
+    // Try to parse as YYYY-MM-DD or other formats
+    const parts = dateStr.match(/(\d{4})-?(\d{2})?-?(\d{2})?/);
+    if (parts) {
+      const year = parts[1];
+      const monthNum = parts[2] || '';
+      const day = parts[3] || '';
+      const yearShort = year ? year.slice(-2) : 'n.d.';
+      const month = monthNum ? new Date(dateStr).toLocaleDateString('en-US', { month: 'long' }) : '';
+      const formattedDate = monthNum && day ? `${monthNum}/${day}/${year}` : dateStr;
+      
+      return {
+        year: year,
+        yearShort: yearShort,
+        month: month,
+        monthNum: monthNum,
+        day: day,
+        date: formattedDate
+      };
+    }
+    return { 
+      year: dateStr, 
+      yearShort: dateStr,
+      month: '', 
+      monthNum: '',
+      day: '',
+      date: dateStr
+    };
+  }
+  
+  const year = date.getFullYear().toString();
+  const yearShort = year.slice(-2);
+  const monthNum = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  
+  return {
+    year: year,
+    yearShort: yearShort,
+    month: date.toLocaleDateString('en-US', { month: 'long' }),
+    monthNum: monthNum,
+    day: day,
+    date: `${monthNum}/${day}/${year}`
+  };
+}
+
+// Function to format author names
+function formatAuthors(authorStr, format) {
+  if (!authorStr) return { full: 'Unknown Author', short: 'Unknown Author' };
+  
+  const authors = authorStr.split(',').map(a => a.trim());
+  
+  let formattedAuthors;
+  if (format === 'apa' || format === 'harvard') {
+    // Last name, First initial format
+    formattedAuthors = authors.map(author => {
+      const parts = author.split(' ');
+      if (parts.length >= 2) {
+        const lastName = parts[parts.length - 1];
+        const initials = parts.slice(0, -1).map(n => n[0] + '.').join(' ');
+        return `${lastName}, ${initials}`;
+      }
+      return author;
+    });
+  } else {
+    formattedAuthors = authors;
+  }
+  
+  // Create short version
+  let shortVersion;
+  if (authors.length === 1) {
+    shortVersion = formattedAuthors[0];
+  } else if (authors.length === 2) {
+    shortVersion = formattedAuthors.join(' & ');
+  } else {
+    // 3 or more authors: first author et al.
+    shortVersion = formattedAuthors[0] + ' et al.';
+  }
+  
+  return {
+    full: formattedAuthors.join(', '),
+    short: shortVersion
+  };
+}
+
+// Function to generate citation from metadata
+function generateCitation(metadata, url, format, customTemplate) {
+  const template = format === 'custom' ? customTemplate : citationFormats[format];
+  if (!template) return 'Citation format not found';
+  
+  const dateParts = formatDateParts(metadata.date || metadata.publishDate);
+  const today = new Date();
+  const accessDate = today.toLocaleDateString('en-US', { 
+    month: 'long', 
+    day: 'numeric', 
+    year: 'numeric' 
+  });
+  const accessDateShort = `${String(today.getMonth() + 1).padStart(2, '0')}/${String(today.getDate()).padStart(2, '0')}/${today.getFullYear()}`;
+  
+  const authorFormats = formatAuthors(metadata.author, format);
+  
+  // Prepare variables
+  const variables = {
+    author: authorFormats.full,
+    authorShort: authorFormats.short,
+    year: dateParts.year,
+    yearShort: dateParts.yearShort,
+    month: dateParts.month,
+    monthNum: dateParts.monthNum,
+    day: dateParts.day,
+    date: dateParts.date,
+    title: metadata.title || 'Untitled',
+    publisher: metadata.publisher || metadata.journal || new URL(url).hostname.replace('www.', ''),
+    journal: metadata.journal || '',
+    doi: metadata.doi || '',
+    url: url,
+    accessDate: accessDate,
+    accessDateShort: accessDateShort
+  };
+  
+  // Replace variables in template
+  let citation = template;
+  Object.entries(variables).forEach(([key, value]) => {
+    // Handle conditional expressions like {url ? "text" : ""}
+    const conditionalRegex = new RegExp(`{${key}\\s*\\?\\s*"([^"]*)"\\s*:\\s*"([^"]*)"\\s*}`, 'g');
+    citation = citation.replace(conditionalRegex, value ? '$1' : '$2');
+    
+    // Replace simple variables
+    citation = citation.replace(new RegExp(`{${key}}`, 'g'), value || '');
+  });
+  
+  // Clean up any remaining empty spaces
+  citation = citation.replace(/\s+/g, ' ').trim();
+  citation = citation.replace(/\s+([.,])/g, '$1');
+  
+  return citation;
+}
+
+// Copy citation function
+async function copyCitation(url, title, buttonElement) {
+  try {
+    // Get metadata for the URL
+    const response = await new Promise((resolve) => {
+      chrome.runtime.sendMessage({
+        action: 'getPageMetadata',
+        url: url
+      }, resolve);
+    });
+    
+    const metadata = (response && response.success && response.metadata) ? response.metadata : {};
+    
+    // Ensure we have at least a title
+    if (!metadata.title) {
+      metadata.title = title || 'Untitled';
+    }
+    
+    // Generate citation based on current settings
+    const citation = generateCitation(metadata, url, citationSettings.format, citationSettings.customTemplate);
+    
+    // Copy to clipboard
+    await navigator.clipboard.writeText(citation);
+    
+    // Visual feedback
+    if (buttonElement) {
+      const originalText = buttonElement.textContent;
+      buttonElement.textContent = '✓ Copied';
+      buttonElement.classList.add('copied');
+      
+      setTimeout(() => {
+        buttonElement.textContent = originalText;
+        buttonElement.classList.remove('copied');
+      }, 1500);
+    }
+    
+    console.log('Citation copied:', citation);
+  } catch (error) {
+    console.error('Error copying citation:', error);
+    alert('Failed to copy citation: ' + error.message);
+  }
+}
+
+// Settings functions
+function loadCitationSettings() {
+  chrome.storage.local.get(['citationSettings'], (result) => {
+    if (result.citationSettings) {
+      citationSettings = result.citationSettings;
+      citationFormatSelect.value = citationSettings.format;
+      customFormatTemplate.value = citationSettings.customTemplate || '';
+      
+      if (citationSettings.format === 'custom') {
+        customFormatSection.style.display = 'block';
+      } else {
+        customFormatSection.style.display = 'none';
+      }
+    }
+  });
+}
+
+function saveCitationSettings() {
+  citationSettings.format = citationFormatSelect.value;
+  citationSettings.customTemplate = customFormatTemplate.value;
+  
+  chrome.storage.local.set({ citationSettings }, () => {
+    console.log('Citation settings saved');
+    closeSettingsModal();
+  });
+}
+
+function closeSettingsModal() {
+  hideCurrentModal();
+}

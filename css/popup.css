@@ -47,6 +47,83 @@ h1 {
   display: inline-block;
 }
 
+/* Header container for title and settings */
+.header-container {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  width: 100%;
+}
+
+.header-container h1 {
+  margin-bottom: 0;
+  border-bottom: none;
+}
+
+/* Settings button */
+.settings-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px;
+  font-size: 18px;
+  opacity: 0.6;
+  transition: opacity 0.2s;
+}
+
+.settings-btn:hover {
+  opacity: 1;
+}
+
+/* Settings modal specific styles */
+.settings-section {
+  margin-bottom: 20px;
+}
+
+.settings-section h4 {
+  margin-bottom: 12px;
+  color: #2c3e50;
+}
+
+.template-help {
+  margin-top: 12px;
+  font-size: 12px;
+  color: #666;
+  background-color: #f5f5f5;
+  padding: 12px;
+  border-radius: 4px;
+}
+
+.template-help code {
+  background-color: #e0e0e0;
+  padding: 2px 4px;
+  border-radius: 2px;
+  font-family: monospace;
+}
+
+.template-help ul {
+  margin-left: 20px;
+  margin-top: 8px;
+}
+
+.template-help p {
+  margin-top: 8px;
+}
+
+/* Copy Citation button styles */
+.copy-citation-btn {
+  background-color: #16a085 !important;
+}
+
+.copy-citation-btn:hover {
+  background-color: #1abc9c !important;
+}
+
+.copy-citation-btn.copied {
+  background-color: #27ae60 !important;
+}
+
 /* Window controls styles */
 .window-controls {
   float: right;

@@ -8,7 +8,12 @@
 </head>
 <body>
   <div class="container">
-    <h1>Research Tracker</h1>
+    <div class="header-container">
+      <h1>Research Tracker</h1>
+      <button id="settings-btn" class="settings-btn" title="Settings">
+        <span class="settings-icon">⚙️</span>
+      </button>
+    </div>
     
     <!-- Popout functionality removed
     <div class="window-controls">
@@ -160,6 +165,61 @@
           
           <div class="modal-buttons">
             <button id="close-searches-btn" class="action-btn secondary-btn">Close</button>
+          </div>
+        </div>
+      </div>
+      
+      <!-- Settings Modal -->
+      <div id="settings-modal" class="modal hidden" style="display: none;">
+        <div class="modal-content">
+          <span class="close-settings-modal">&times;</span>
+          <h3>Settings</h3>
+          
+          <div class="settings-section">
+            <h4>Citation Format</h4>
+            
+            <div class="form-group">
+              <label for="citation-format">Select Citation Style:</label>
+              <select id="citation-format">
+                <option value="apa">APA 7th Edition</option>
+                <option value="mla">MLA 9th Edition</option>
+                <option value="chicago">Chicago 17th Edition</option>
+                <option value="harvard">Harvard</option>
+                <option value="ieee">IEEE</option>
+                <option value="custom">Custom Format</option>
+              </select>
+            </div>
+            
+            <div id="custom-format-section" class="form-group" style="display: none;">
+              <label for="custom-format-template">Custom Citation Template:</label>
+              <textarea id="custom-format-template" rows="4" placeholder="{author} ({year}). {title}. {publisher}."></textarea>
+              <div class="template-help">
+                <p><strong>Available variables:</strong></p>
+                <ul>
+                  <li><code>{author}</code> - All author names</li>
+                  <li><code>{authorShort}</code> - First author et al. (3+ authors)</li>
+                  <li><code>{year}</code> - Publication year (YYYY)</li>
+                  <li><code>{yearShort}</code> - Publication year (YY)</li>
+                  <li><code>{month}</code> - Publication month (full name)</li>
+                  <li><code>{monthNum}</code> - Publication month (MM)</li>
+                  <li><code>{day}</code> - Publication day (DD)</li>
+                  <li><code>{date}</code> - Publication date (MM/DD/YYYY)</li>
+                  <li><code>{title}</code> - Page/article title</li>
+                  <li><code>{publisher}</code> - Publisher or website name</li>
+                  <li><code>{journal}</code> - Journal name</li>
+                  <li><code>{doi}</code> - Digital Object Identifier</li>
+                  <li><code>{url}</code> - Page URL</li>
+                  <li><code>{accessDate}</code> - Today's date</li>
+                  <li><code>{accessDateShort}</code> - Today's date (MM/DD/YYYY)</li>
+                </ul>
+                <p><strong>Example:</strong> {author} ({yearShort}). {title}. {publisher}. Retrieved {accessDateShort} from {url}</p>
+              </div>
+            </div>
+          </div>
+          
+          <div class="modal-buttons">
+            <button id="save-settings-btn" class="action-btn">Save Settings</button>
+            <button id="cancel-settings-btn" class="action-btn secondary-btn">Cancel</button>
           </div>
         </div>
       </div>

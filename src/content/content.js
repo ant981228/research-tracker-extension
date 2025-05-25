@@ -3691,8 +3691,36 @@ document.addEventListener('keydown', async (e) => {
     const fieldName = field.charAt(0).toUpperCase() + field.slice(1).replace(/([A-Z])/g, ' $1');
     showToast(`${fieldName} updated: ${parsedValue}`);
   }
+  
+  // Check for Ctrl+q (copy citation)
+  if (e.ctrlKey && !e.shiftKey && !e.altKey && e.key === 'q') {
+    console.log('Research Tracker: Ctrl+q detected - Copy Citation');
+    e.preventDefault();
+    e.stopPropagation();
+    
+    // Send message to extension to copy citation for current page
+    chrome.runtime.sendMessage({
+      action: 'copyCitationForCurrentPage'
+    }, (response) => {
+      if (response && response.success) {
+        if (response.missingFields && response.missingFields.length > 0) {
+          // Yellow warning toast with missing fields
+          const missingFieldsList = response.missingFields.join(', ');
+          showToast(`Citation copied (missing: ${missingFieldsList})`, 'warning');
+        } else {
+          // Green success toast
+          showToast('Citation copied to clipboard', 'success');
+        }
+      } else {
+        // Red error toast
+        const errorMsg = response?.error || 'Unknown error';
+        showToast(`Failed to copy citation: ${errorMsg}`, 'error');
+      }
+    });
+  }
 }, true); // Use capture phase
 
 // Log that keyboard shortcuts are initialized
-console.log('Research Tracker: Keyboard shortcuts initialized. Use Ctrl+[1-6] with selected text during recording:');
-console.log('  Ctrl+1: Title | Ctrl+2: Author | Ctrl+3: Date | Ctrl+4: Publisher | Ctrl+5: Journal | Ctrl+6: DOI');
+console.log('Research Tracker: Keyboard shortcuts initialized.');
+console.log('  Ctrl+[1-6] with selected text during recording: Title, Author, Date, Publisher, Journal, DOI');
+console.log('  Ctrl+q : Copy citation for current page');
