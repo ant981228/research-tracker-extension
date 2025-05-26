@@ -2,6 +2,8 @@
 
 This document provides detailed technical specifications for the Research Tracker Chrome extension's export formats. It is intended to serve as a guide for implementing an intake system for the visualization website that will process these exports.
 
+**Version 1.1** - Updated to include site-specific metadata extraction fields
+
 ## Overview
 
 The Research Tracker extension captures detailed information about a user's research process, including searches performed, pages visited, and notes added. The extension exports this data in two formats:
@@ -93,9 +95,57 @@ The `contentPages` array contains objects representing each web page visited dur
     "title": "string",               // Page title (may be more accurate than top-level)
     "url": "string",                 // URL (canonical URL if available)
     "author": "string",              // Author information if available
+    "authors": ["string"],           // Array of authors (when multiple)
     "publishDate": "string",         // Publication date if available
     "description": "string",         // Page description/excerpt
-    "quals": "string",               // Qualification information (user-entered)
+    "publisher": "string",           // Publisher or website name
+    "contentType": "string",         // Type of content (article, report, etc.)
+    "extractorType": "string",       // "site-specific" or "generic"
+    "extractorSite": "string",       // Hostname if site-specific extractor used
+    
+    // Academic/Research fields
+    "abstract": "string",            // Academic abstract
+    "doi": "string",                 // Digital Object Identifier
+    "pmid": "string",                // PubMed ID
+    "arxivId": "string",             // arXiv paper ID
+    "jstorId": "string",             // JSTOR stable ID
+    "citationKey": "string",         // Formatted citation key (e.g., "doi:10.1234/xyz")
+    "journal": "string",             // Journal name
+    "subjects": "string",            // Subject categories
+    "categories": ["string"],        // Categories as array
+    "pdfUrl": "string",              // Direct PDF link if available
+    
+    // News fields
+    "section": "string",             // News section/category
+    "hasPaywall": boolean,           // Whether content is paywalled
+    "lastUpdated": "string",         // Last update timestamp
+    "tags": ["string"],              // Article tags
+    
+    // Social media fields
+    "subreddit": "string",           // Reddit subreddit
+    "postType": "string",            // Type of post
+    "score": "string",               // Upvotes/score
+    "username": "string",            // Username/handle
+    "tweetId": "string",             // Twitter/X tweet ID
+    "tweetText": "string",           // Full tweet text
+    
+    // Think tank/Research org fields
+    "publicationType": "string",     // Type of publication
+    "documentType": "string",        // Document type
+    "topics": ["string"],            // Research topics
+    "randDocNumber": "string",       // RAND document number
+    "category": "string",            // Report category
+    
+    // Wikipedia fields
+    "language": "string",            // Wikipedia language code
+    "lastModified": "string",        // Last modification date
+    "permanentUrl": "string",        // Permanent Wikipedia URL
+    "isOpenAccess": boolean,         // Whether content is open access
+    
+    // Metadata editing fields
+    "manuallyEdited": boolean,       // Whether metadata was manually edited
+    "editTimestamp": "string",       // When metadata was edited
+    
     "schema": {}                     // Optional schema.org structured data if present
   },
   "notes": [                         // Optional array of notes for this page
@@ -170,11 +220,54 @@ The `params` object in search events contains all query parameters from the sear
 ### Metadata Extraction
 
 Page metadata is extracted through:
-1. Standard HTML meta tags
-2. Open Graph protocol tags
-3. Schema.org JSON-LD structured data
+1. Site-specific extractors for major websites (when available)
+2. Standard HTML meta tags
+3. Open Graph protocol tags
+4. Schema.org JSON-LD structured data
 
 The availability and completeness of metadata varies considerably depending on the website visited.
+
+#### Site-Specific Extractors
+
+The extension includes specialized metadata extractors for the following domains:
+
+**Academic/Research Sites:**
+- arXiv.org - Extracts arXiv ID, authors array, abstract, subjects, PDF links
+- PubMed/NCBI - Extracts PMID, journal info, DOI, medical abstracts
+- JSTOR - Extracts JSTOR ID, scholarly article metadata
+- DOI.org - Extracts DOI identifiers
+
+**News Organizations:**
+- New York Times - Enhanced article metadata, section info, paywall status
+- Washington Post - Article metadata with sections
+- Wall Street Journal - Article type, paywall indicator
+- The Guardian - Tags, sections, high-quality structured data
+- BBC - Section categorization
+- CNN - Last updated timestamps
+
+**Academic Publishers:**
+- ScienceDirect/Elsevier - Journal info, DOI, abstracts
+- Nature - Scientific article metadata
+- Springer - Academic paper details
+- Wiley - Journal article information
+
+**Social Media:**
+- Reddit - Subreddit, post type, scores, usernames
+- Twitter/X - Tweet ID, full text, usernames
+
+**Think Tanks/Research Organizations:**
+- Brookings Institution - Report types, topics
+- RAND Corporation - Document numbers, report metadata
+- Pew Research - Research categories, topics
+
+**Other:**
+- Wikipedia - Categories, language, last modified date, permanent URLs
+
+When a site-specific extractor is used, the metadata will include:
+- `extractorType`: "site-specific" 
+- `extractorSite`: The hostname where the extractor was applied
+
+This allows the visualization system to know which metadata fields are likely to be available and accurate.
 
 ## TXT Export Format
 
@@ -256,8 +349,7 @@ When developing the visualization website's intake system:
         "url": "https://www.scientificamerican.com/article/sea-level-rise-projections/",
         "author": "Jane Smith",
         "publishDate": "2025-05-10",
-        "description": "Recent studies show sea levels rising faster than previously predicted...",
-        "quals": "PhD in Climate Science, University of Cambridge"
+        "description": "Recent studies show sea levels rising faster than previously predicted..."
       },
       "notes": [
         {
@@ -304,8 +396,7 @@ When developing the visualization website's intake system:
         "url": "https://www.scientificamerican.com/article/sea-level-rise-projections/",
         "author": "Jane Smith",
         "publishDate": "2025-05-10",
-        "description": "Recent studies show sea levels rising faster than previously predicted...",
-        "quals": "PhD in Climate Science, University of Cambridge"
+        "description": "Recent studies show sea levels rising faster than previously predicted..."
       },
       "notes": [
         {
