@@ -36,12 +36,43 @@ const SITE_SPECIFIC_EXTRACTORS = {
   'cnn.com': extractCNNMetadata,
   'www.cnn.com': extractCNNMetadata,
   'abcnews.go.com': extractABCNewsMetadata,
+  'nbcnews.com': extractNBCNewsMetadata,
+  'www.nbcnews.com': extractNBCNewsMetadata,
+  'cbsnews.com': extractCBSNewsMetadata,
+  'www.cbsnews.com': extractCBSNewsMetadata,
+  'cnbc.com': extractCNBCMetadata,
+  'www.cnbc.com': extractCNBCMetadata,
   'latimes.com': extractLATimesMetadata,
   'www.latimes.com': extractLATimesMetadata,
   'reuters.com': extractReutersMetadata,
   'www.reuters.com': extractReutersMetadata,
   'nationalreview.com': extractNationalReviewMetadata,
   'www.nationalreview.com': extractNationalReviewMetadata,
+  'theglobeandmail.com': extractGlobeAndMailMetadata,
+  'www.theglobeandmail.com': extractGlobeAndMailMetadata,
+  'nypost.com': extractNYPostMetadata,
+  'www.nypost.com': extractNYPostMetadata,
+  'usnews.com': extractUSNewsMetadata,
+  'www.usnews.com': extractUSNewsMetadata,
+  'dw.com': extractDWMetadata,
+  'www.dw.com': extractDWMetadata,
+  'timesofindia.indiatimes.com': extractTimesOfIndiaMetadata,
+  'indianexpress.com': extractIndianExpressMetadata,
+  'www.indianexpress.com': extractIndianExpressMetadata,
+  'hindustantimes.com': extractHindustanTimesMetadata,
+  'www.hindustantimes.com': extractHindustanTimesMetadata,
+  'thehill.com': extractTheHillMetadata,
+  'www.thehill.com': extractTheHillMetadata,
+  'thedailybeast.com': extractDailyBeastMetadata,
+  'www.thedailybeast.com': extractDailyBeastMetadata,
+  'newsweek.com': extractNewsweekMetadata,
+  'www.newsweek.com': extractNewsweekMetadata,
+  'bangkokpost.com': extractBangkokPostMetadata,
+  'www.bangkokpost.com': extractBangkokPostMetadata,
+  'japantimes.co.jp': extractJapanTimesMetadata,
+  'www.japantimes.co.jp': extractJapanTimesMetadata,
+  'apnews.com': extractAPNewsMetadata,
+  'www.apnews.com': extractAPNewsMetadata,
   
   // Academic publishers
   'sciencedirect.com': extractScienceDirectMetadata,
@@ -1790,26 +1821,57 @@ function extractGuardianMetadata() {
   const metadata = {};
   
   try {
-    // Guardian has excellent structured data
-    const ldJsonScripts = document.querySelectorAll('script[type="application/ld+json"]');
-    for (const script of ldJsonScripts) {
-      try {
-        const data = JSON.parse(script.textContent);
-        if (data['@type'] === 'NewsArticle' || data['@type'] === 'Article') {
-          if (data.headline) metadata.title = data.headline;
-          if (data.author) {
-            if (Array.isArray(data.author)) {
-              metadata.authors = data.author.map(a => a.name || a);
-              metadata.author = metadata.authors.join(', ');
-            } else {
-              metadata.author = data.author.name || data.author;
-            }
+    // First try article:author meta tag
+    const authorMeta = document.querySelector('meta[property="article:author"]');
+    if (authorMeta && authorMeta.getAttribute('content')) {
+      const authorContent = authorMeta.getAttribute('content');
+      // Check if it's a URL
+      if (authorContent.startsWith('http')) {
+        // Extract name from URL (last part after final slash)
+        const urlParts = authorContent.split('/');
+        const profileName = urlParts[urlParts.length - 1];
+        if (profileName) {
+          // Convert profile URL format to display name (e.g., "jose-olivares" -> "Jose Olivares")
+          const displayName = profileName
+            .replace(/-/g, ' ')
+            .split(' ')
+            .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+            .join(' ');
+          // Only use this approach if we have more than one word (contains spaces)
+          if (displayName.includes(' ')) {
+            metadata.author = displayName;
           }
-          if (data.datePublished) metadata.publishDate = data.datePublished;
-          if (data.description) metadata.description = data.description;
         }
-      } catch (e) {
-        // Continue
+      } else {
+        // Not a URL, use content directly
+        // Handle multiple authors separated by "and"
+        const authors = authorContent.split(/\s+and\s+/).map(a => a.trim()).filter(a => a);
+        if (authors.length > 0) {
+          metadata.authors = authors;
+          metadata.author = authors.join(', ');
+        }
+      }
+    }
+    
+    // If no author yet, try byline link
+    if (!metadata.author) {
+      const bylineLink = document.querySelector('address[data-component="meta-byline"] a[rel="author"]');
+      if (bylineLink) {
+        metadata.author = bylineLink.textContent.trim();
+      }
+    }
+    
+    // If still no author, try the headline area
+    if (!metadata.author) {
+      const headlineAuthor = document.querySelector('[data-gu-name="headline"] .dcr-1ct8skw span');
+      if (headlineAuthor) {
+        const authorText = headlineAuthor.textContent.trim();
+        // Handle multiple authors separated by "and"
+        const authors = authorText.split(/\s+and\s+/).map(a => a.trim()).filter(a => a);
+        if (authors.length > 0) {
+          metadata.authors = authors;
+          metadata.author = authors.join(', ');
+        }
       }
     }
     
@@ -1938,6 +2000,108 @@ function extractABCNewsMetadata() {
     
   } catch (e) {
     console.error('Error in ABC News extractor:', e);
+  }
+  
+  return metadata;
+}
+
+// NBC News extractor
+function extractNBCNewsMetadata() {
+  const metadata = {};
+  
+  try {
+    // Extract authors from branch:deeplink:authorName meta tags
+    const authorMetas = document.querySelectorAll('meta[name^="branch:deeplink:authorName"]');
+    if (authorMetas.length > 0) {
+      const authors = Array.from(authorMetas)
+        .map(meta => {
+          const content = meta.getAttribute('content');
+          if (content) {
+            // Remove affiliation after comma (e.g., "Erin Doherty, CNBC" -> "Erin Doherty")
+            return content.split(',')[0].trim();
+          }
+          return null;
+        })
+        .filter(a => a);
+      if (authors.length > 0) {
+        metadata.authors = authors;
+        metadata.author = authors.join(', ');
+      }
+    }
+    
+    // Set standard fields
+    metadata.contentType = 'news-article';
+    metadata.publisher = 'NBC News';
+    
+  } catch (e) {
+    console.error('Error in NBC News extractor:', e);
+  }
+  
+  return metadata;
+}
+
+// CBS News extractor
+function extractCBSNewsMetadata() {
+  const metadata = {};
+  
+  try {
+    // Extract author from byline - try link first, then text span
+    const authorLink = document.querySelector('.byline__author__link');
+    if (authorLink) {
+      metadata.author = authorLink.textContent.trim();
+    } else {
+      // Fallback to text span when no link is present
+      const authorText = document.querySelector('.byline__author__text');
+      if (authorText) {
+        metadata.author = authorText.textContent.trim();
+      }
+    }
+    
+    // Extract date from time element
+    const timeEl = document.querySelector('.content__meta--timestamp time');
+    if (timeEl) {
+      const dateTime = timeEl.getAttribute('datetime');
+      if (dateTime) {
+        metadata.publishDate = dateTime;
+      }
+    }
+    
+    // Set standard fields
+    metadata.contentType = 'news-article';
+    metadata.publisher = 'CBS News';
+    
+    // If no author found, use CBS News as author
+    if (!metadata.author) {
+      metadata.author = 'CBS News';
+    }
+    
+  } catch (e) {
+    console.error('Error in CBS News extractor:', e);
+  }
+  
+  return metadata;
+}
+
+// CNBC extractor
+function extractCNBCMetadata() {
+  const metadata = {};
+  
+  try {
+    // Extract author from meta tag, removing role designations
+    const authorMeta = document.querySelector('meta[name="author"]');
+    if (authorMeta && authorMeta.getAttribute('content')) {
+      let authorContent = authorMeta.getAttribute('content');
+      // Remove role designations like ", Contributor" or ", Reporter"
+      authorContent = authorContent.replace(/,\s*(Contributor|Reporter|Editor|Correspondent|Analyst|Columnist|Writer)$/i, '');
+      metadata.author = authorContent.trim();
+    }
+    
+    // Set standard fields
+    metadata.contentType = 'news-article';
+    metadata.publisher = 'CNBC';
+    
+  } catch (e) {
+    console.error('Error in CNBC extractor:', e);
   }
   
   return metadata;
@@ -5163,6 +5327,480 @@ function extractNationalReviewMetadata() {
   }
   
   // Return metadata - generic extractors will handle title, etc.
+  return metadata;
+}
+
+// Globe and Mail extractor
+function extractGlobeAndMailMetadata() {
+  const metadata = {};
+  
+  try {
+    // Extract authors from article meta section
+    // First try author links
+    let authorLinks = document.querySelectorAll('.c-article-meta__author-info a[href*="/authors/"], .c-article-meta__bylines a[href*="/authors/"]');
+    
+    if (authorLinks.length > 0) {
+      const authors = Array.from(authorLinks).map(link => {
+        // Get the text content without the SVG icon
+        const textNodes = Array.from(link.childNodes)
+          .filter(node => node.nodeType === Node.TEXT_NODE)
+          .map(node => node.textContent.trim())
+          .filter(text => text.length > 0);
+        return textNodes.join(' ');
+      });
+      metadata.authors = authors;
+      metadata.author = authors.join(', ');
+    } else {
+      // If no author links, try byline spans
+      const bylineSpans = document.querySelectorAll('.c-article-meta__bylines span[class*="StyledByline"]');
+      if (bylineSpans.length > 0) {
+        const authors = Array.from(bylineSpans).map(span => span.textContent.trim());
+        metadata.authors = authors;
+        metadata.author = authors.join(', ');
+      }
+    }
+    
+    // Extract publish date from the first time element
+    const publishedTime = document.querySelector('.c-article-meta time[datetime]');
+    if (publishedTime) {
+      const dateTime = publishedTime.getAttribute('datetime');
+      if (dateTime) {
+        metadata.publishDate = dateTime;
+      }
+    }
+    
+    // Set standard fields
+    metadata.contentType = 'news-article';
+    metadata.publisher = 'The Globe and Mail';
+    
+  } catch (e) {
+    console.error('Error in Globe and Mail extractor:', e);
+  }
+  
+  return metadata;
+}
+
+// NY Post extractor
+function extractNYPostMetadata() {
+  const metadata = {};
+  
+  try {
+    // Extract authors from byline structure
+    const authorLinks = document.querySelectorAll('.byline__author a[href*="/author/"]');
+    if (authorLinks.length > 0) {
+      const authors = Array.from(authorLinks).map(link => link.textContent.trim());
+      metadata.authors = authors;
+      metadata.author = authors.join(', ');
+    }
+    
+    // Set standard fields
+    metadata.contentType = 'news-article';
+    metadata.publisher = 'New York Post';
+    
+  } catch (e) {
+    console.error('Error in NY Post extractor:', e);
+  }
+  
+  return metadata;
+}
+
+// US News extractor
+function extractUSNewsMetadata() {
+  const metadata = {};
+  
+  try {
+    // Extract authors from sailthru.author meta tag
+    const authorMeta = document.querySelector('meta[property="sailthru.author"]');
+    if (authorMeta && authorMeta.getAttribute('content')) {
+      const authorContent = authorMeta.getAttribute('content');
+      // Split by comma to handle multiple authors
+      const authors = authorContent.split(',').map(a => a.trim()).filter(a => a);
+      if (authors.length > 0) {
+        metadata.authors = authors;
+        metadata.author = authors.join(', ');
+      }
+    }
+    
+    // Extract date from sailthru.date meta tag
+    const dateMeta = document.querySelector('meta[property="sailthru.date"]');
+    if (dateMeta && dateMeta.getAttribute('content')) {
+      metadata.publishDate = dateMeta.getAttribute('content');
+    }
+    
+    // Set standard fields
+    metadata.contentType = 'news-article';
+    metadata.publisher = 'U.S. News & World Report';
+    
+  } catch (e) {
+    console.error('Error in US News extractor:', e);
+  }
+  
+  return metadata;
+}
+
+// DW (Deutsche Welle) extractor
+function extractDWMetadata() {
+  const metadata = {};
+  
+  try {
+    // Extract title and date from the title tag
+    const titleTag = document.querySelector('title');
+    if (titleTag) {
+      const titleContent = titleTag.textContent;
+      // Pattern: "Title – DW – MM/DD/YYYY"
+      const match = titleContent.match(/^(.+?)\s*–\s*DW\s*–\s*(\d{2}\/\d{2}\/\d{4})$/);
+      if (match) {
+        metadata.title = match[1].trim();
+        // Convert MM/DD/YYYY to YYYY-MM-DD
+        const dateParts = match[2].split('/');
+        if (dateParts.length === 3) {
+          metadata.publishDate = `${dateParts[2]}-${dateParts[0]}-${dateParts[1]}`;
+        }
+      }
+    }
+    
+    // Extract author from author details
+    const authorLink = document.querySelector('.author-details a.author');
+    if (authorLink) {
+      metadata.author = authorLink.textContent.trim();
+    }
+    
+    // Set standard fields
+    metadata.contentType = 'news-article';
+    metadata.publisher = 'Deutsche Welle';
+    
+  } catch (e) {
+    console.error('Error in DW extractor:', e);
+  }
+  
+  return metadata;
+}
+
+// Times of India extractor
+function extractTimesOfIndiaMetadata() {
+  const metadata = {};
+  
+  try {
+    // Extract title from og:title and remove " - Times of India" suffix
+    const ogTitle = document.querySelector('meta[property="og:title"]');
+    if (ogTitle && ogTitle.getAttribute('content')) {
+      let titleContent = ogTitle.getAttribute('content');
+      // Remove " - Times of India" from the end
+      titleContent = titleContent.replace(/\s*-\s*Times of India\s*$/i, '');
+      metadata.title = titleContent.trim();
+    }
+    
+    // Extract author from byline - everything before the first forward slash
+    const bylineEl = document.querySelector('.byline');
+    if (bylineEl) {
+      const bylineText = bylineEl.textContent;
+      // Get everything before the first forward slash
+      const authorPart = bylineText.split('/')[0];
+      if (authorPart) {
+        // This may include multiple authors separated by commas or "and"
+        const authors = authorPart.trim().split(/\s*,\s*|\s+and\s+/).filter(a => a);
+        if (authors.length > 0) {
+          metadata.authors = authors;
+          metadata.author = authors.join(', ');
+        }
+      }
+    }
+    
+    // Extract date from byline span
+    const dateSpan = document.querySelector('.byline span');
+    if (dateSpan) {
+      const dateText = dateSpan.textContent;
+      // Extract date after "Updated: " - capture month, day, and year (before the time)
+      const match = dateText.match(/Updated:\s*(\w+\s+\d{1,2},\s+\d{4})/);
+      if (match) {
+        metadata.publishDate = match[1].trim();
+      }
+    }
+    
+    // Set standard fields
+    metadata.contentType = 'news-article';
+    metadata.publisher = 'Times of India';
+    
+  } catch (e) {
+    console.error('Error in Times of India extractor:', e);
+  }
+  
+  return metadata;
+}
+
+// Indian Express extractor
+function extractIndianExpressMetadata() {
+  const metadata = {};
+  
+  try {
+    // Extract author from itemprop="author" meta tag
+    const authorMeta = document.querySelector('meta[itemprop="author"]');
+    if (authorMeta && authorMeta.getAttribute('content')) {
+      metadata.author = authorMeta.getAttribute('content').trim();
+    }
+    
+    // Set standard fields
+    metadata.contentType = 'news-article';
+    metadata.publisher = 'The Indian Express';
+    
+  } catch (e) {
+    console.error('Error in Indian Express extractor:', e);
+  }
+  
+  return metadata;
+}
+
+// Hindustan Times extractor
+function extractHindustanTimesMetadata() {
+  const metadata = {};
+  
+  try {
+    // Extract title from h1.hdg1
+    const titleEl = document.querySelector('h1.hdg1');
+    if (titleEl) {
+      metadata.title = titleEl.textContent.trim();
+    }
+    
+    // Extract author and date from dataHolder attributes
+    const dataHolder = document.getElementById('dataHolder');
+    if (dataHolder) {
+      // Extract author from data-author-name
+      const authorName = dataHolder.getAttribute('data-author-name');
+      if (authorName) {
+        metadata.author = authorName.trim();
+      }
+      
+      // Extract date from data-published-date (format: MMDDYYYY-HH:MM:SS)
+      const publishedDate = dataHolder.getAttribute('data-published-date');
+      if (publishedDate) {
+        // Parse MMDDYYYY-HH:MM:SS format
+        const match = publishedDate.match(/^(\d{2})(\d{2})(\d{4})-/);
+        if (match) {
+          const month = match[1];
+          const day = match[2];
+          const year = match[3];
+          metadata.publishDate = `${year}-${month}-${day}`;
+        }
+      }
+    }
+    
+    // Set standard fields
+    metadata.contentType = 'news-article';
+    metadata.publisher = 'Hindustan Times';
+    
+  } catch (e) {
+    console.error('Error in Hindustan Times extractor:', e);
+  }
+  
+  return metadata;
+}
+
+// The Hill extractor
+function extractTheHillMetadata() {
+  const metadata = {};
+  
+  try {
+    // Extract title from dcterms.title meta tag
+    const titleMeta = document.querySelector('meta[name="dcterms.title"]');
+    if (titleMeta && titleMeta.getAttribute('content')) {
+      metadata.title = titleMeta.getAttribute('content');
+    }
+    
+    // Extract author from dcterms.creator meta tag
+    const authorMeta = document.querySelector('meta[name="dcterms.creator"]');
+    if (authorMeta && authorMeta.getAttribute('content')) {
+      let author = authorMeta.getAttribute('content');
+      
+      // Extract just the first line and clean it up
+      author = author.split('\n')[0].trim();
+      
+      // Extract just the author part before the dash
+      if (author.includes(' - ')) {
+        author = author.split(' - ')[0].trim();
+      }
+      
+      // If author is "TheHill.com", use just "The Hill"
+      if (author === 'TheHill.com' || author.toLowerCase() === 'thehill.com') {
+        metadata.author = 'The Hill';
+      } else {
+        metadata.author = author;
+      }
+    }
+    
+    // Also prevent the generic extractor from overwriting our author
+    // by removing the dcterms.creator meta tag after we've used it
+    if (authorMeta) {
+      authorMeta.remove();
+    }
+    
+    // Set standard fields
+    metadata.contentType = 'news-article';
+    metadata.publisher = 'The Hill';
+    
+  } catch (e) {
+    console.error('Error in The Hill extractor:', e);
+  }
+  
+  return metadata;
+}
+
+// The Daily Beast extractor
+function extractDailyBeastMetadata() {
+  const metadata = {};
+  
+  try {
+    // Extract author from byline structure
+    const authorNameEl = document.querySelector('.Article-byline--single-author__author-name');
+    if (authorNameEl) {
+      metadata.author = authorNameEl.textContent.trim();
+    }
+    
+    // Extract publish date from publication time
+    const pubTimeEl = document.querySelector('.PublicationTime__pub-time');
+    if (pubTimeEl) {
+      const dateTime = pubTimeEl.getAttribute('datetime');
+      if (dateTime) {
+        // Extract just the date part (e.g., "May 25, 2025 at 10:13AM EDT" -> "May 25, 2025")
+        const match = dateTime.match(/^(\w+\s+\d{1,2},\s+\d{4})/);
+        if (match) {
+          metadata.publishDate = match[1];
+        }
+      }
+    }
+    
+    // Set standard fields
+    metadata.contentType = 'news-article';
+    metadata.publisher = 'The Daily Beast';
+    
+  } catch (e) {
+    console.error('Error in Daily Beast extractor:', e);
+  }
+  
+  return metadata;
+}
+
+// Newsweek extractor
+function extractNewsweekMetadata() {
+  const metadata = {};
+  
+  try {
+    // Extract author from article content byline only
+    const articleContent = document.querySelector('.article-content');
+    if (articleContent) {
+      // First try author link within article content
+      const authorLink = articleContent.querySelector('.byline .author-name');
+      if (authorLink) {
+        metadata.author = authorLink.textContent.trim();
+      } else {
+        // Fallback: look for author in simple span structure within article content
+        const authorSpan = articleContent.querySelector('.byline .author > span:not(.tooltiptext)');
+        if (authorSpan && authorSpan.textContent) {
+          metadata.author = authorSpan.textContent.trim();
+        }
+      }
+    }
+    
+    // Set standard fields
+    metadata.contentType = 'news-article';
+    metadata.publisher = 'Newsweek';
+    
+  } catch (e) {
+    console.error('Error in Newsweek extractor:', e);
+  }
+  
+  return metadata;
+}
+
+// Bangkok Post extractor
+function extractBangkokPostMetadata() {
+  const metadata = {};
+  
+  try {
+    // Extract author from lead:author meta tag
+    const authorMeta = document.querySelector('meta[name="lead:author"]');
+    if (authorMeta && authorMeta.getAttribute('content')) {
+      metadata.author = authorMeta.getAttribute('content').trim();
+    }
+    
+    // Extract date from lead:published_at meta tag
+    const dateMeta = document.querySelector('meta[name="lead:published_at"]');
+    if (dateMeta && dateMeta.getAttribute('content')) {
+      metadata.publishDate = dateMeta.getAttribute('content').trim();
+    }
+    
+    // Set standard fields
+    metadata.contentType = 'news-article';
+    metadata.publisher = 'Bangkok Post';
+    
+  } catch (e) {
+    console.error('Error in Bangkok Post extractor:', e);
+  }
+  
+  return metadata;
+}
+
+// Japan Times extractor
+function extractJapanTimesMetadata() {
+  const metadata = {};
+  
+  try {
+    // Extract author from cXenseParse:author meta tag
+    const authorMeta = document.querySelector('meta[name="cXenseParse:author"]');
+    if (authorMeta && authorMeta.getAttribute('content')) {
+      const authorContent = authorMeta.getAttribute('content').trim();
+      // Check if there's a data-separator attribute for multiple authors
+      const separator = authorMeta.getAttribute('data-separator') || ',';
+      if (authorContent.includes(separator)) {
+        const authors = authorContent.split(separator).map(a => a.trim()).filter(a => a);
+        metadata.authors = authors;
+        metadata.author = authors.join(', ');
+      } else {
+        metadata.author = authorContent;
+      }
+    }
+    
+    // Extract title from og:title meta tag
+    const titleMeta = document.querySelector('meta[property="og:title"]');
+    if (titleMeta && titleMeta.getAttribute('content')) {
+      metadata.title = titleMeta.getAttribute('content').trim();
+    }
+    
+    // Set standard fields
+    metadata.contentType = 'news-article';
+    metadata.publisher = 'The Japan Times';
+    
+  } catch (e) {
+    console.error('Error in Japan Times extractor:', e);
+  }
+  
+  return metadata;
+}
+
+// AP News extractor
+function extractAPNewsMetadata() {
+  const metadata = {};
+  
+  try {
+    // Extract author from byline structure
+    const authorLinks = document.querySelectorAll('.Page-authors a');
+    if (authorLinks.length > 0) {
+      const authors = Array.from(authorLinks).map(link => link.textContent.trim());
+      if (authors.length === 1) {
+        metadata.author = authors[0];
+      } else {
+        metadata.authors = authors;
+        metadata.author = authors.join(', ');
+      }
+    }
+    
+    // Set standard fields
+    metadata.contentType = 'news-article';
+    metadata.publisher = 'Associated Press';
+    
+  } catch (e) {
+    console.error('Error in AP News extractor:', e);
+  }
+  
   return metadata;
 }
 
