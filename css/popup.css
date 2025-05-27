@@ -524,13 +524,21 @@ h3 {
   margin-top: 4px;
 }
 
-.export-btn, .delete-btn {
+.export-btn, .delete-btn, .resume-btn {
   padding: 4px 8px;
   border: none;
   border-radius: 4px;
   font-size: 12px;
   cursor: pointer;
   color: white;
+}
+
+.resume-btn {
+  background-color: #27ae60;
+}
+
+.resume-btn:hover {
+  background-color: #229954;
 }
 
 .export-btn {

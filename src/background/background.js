@@ -264,6 +264,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       }
       break;
       
+    case 'resumeSession':
+      if (message.sessionId) {
+        resumeSession(message.sessionId)
+          .then(() => sendResponse({ success: true }))
+          .catch(error => sendResponse({ success: false, error }));
+        return true; // Indicates async response
+      } else {
+        sendResponse({ success: false, error: 'No session ID provided' });
+      }
+      break;
+    
     case 'deleteSession':
       if (message.sessionId) {
         deleteSession(message.sessionId)
@@ -613,6 +624,13 @@ function stopRecording() {
     
     if (currentSession) {
       currentSession.endTime = new Date().toISOString();
+      
+      // Add session_ended event
+      const endEvent = {
+        type: 'session_ended',
+        timestamp: currentSession.endTime
+      };
+      currentSession.events.push(endEvent);
       
       // Save session to storage
       chrome.storage.local.get([STORAGE_KEYS.SESSIONS], (result) => {
@@ -1306,6 +1324,106 @@ async function renameSession(sessionId, newName) {
   });
 }
 
+async function resumeSession(sessionId) {
+  return new Promise((resolve, reject) => {
+    // Don't allow resuming if already recording
+    if (isRecording && currentSession) {
+      reject('Cannot resume session while another session is active. Please stop the current session first.');
+      return;
+    }
+    
+    chrome.storage.local.get([STORAGE_KEYS.SESSIONS], (result) => {
+      const sessions = result[STORAGE_KEYS.SESSIONS] || [];
+      const sessionIndex = sessions.findIndex(s => s.id === sessionId);
+      
+      if (sessionIndex === -1) {
+        reject('Session not found');
+        return;
+      }
+      
+      const sessionToResume = sessions[sessionIndex];
+      
+      // Validate session data integrity
+      if (!validateSessionData(sessionToResume)) {
+        reject('Session data is corrupted and cannot be resumed');
+        return;
+      }
+      
+      // Remove session from completed sessions list
+      sessions.splice(sessionIndex, 1);
+      
+      // Prepare session for resumption
+      const resumedSession = {
+        ...sessionToResume,
+        endTime: null, // Clear end time
+        isPaused: false
+      };
+      
+      // Add session_resumed event
+      const resumeEvent = {
+        type: 'session_resumed',
+        timestamp: new Date().toISOString(),
+        previousEndTime: sessionToResume.endTime
+      };
+      
+      resumedSession.events.push(resumeEvent);
+      
+      // Set as current session
+      currentSession = resumedSession;
+      isRecording = true;
+      
+      // Save updated state
+      chrome.storage.local.set({ 
+        [STORAGE_KEYS.IS_RECORDING]: true,
+        [STORAGE_KEYS.CURRENT_SESSION]: currentSession,
+        [STORAGE_KEYS.SESSIONS]: sessions,
+        [STORAGE_KEYS.LAST_SAVE_TIMESTAMP]: Date.now()
+      }, () => {
+        if (chrome.runtime.lastError) {
+          reject(chrome.runtime.lastError);
+        } else {
+          // Set up listeners and autosave
+          setupRecordingListeners();
+          startAutosave();
+          updateBadge();
+          
+          console.log('Session resumed:', sessionId);
+          resolve();
+        }
+      });
+    });
+  });
+}
+
+function validateSessionData(session) {
+  // Check required fields exist
+  if (!session || typeof session !== 'object') return false;
+  if (!session.id || !session.name || !session.startTime) return false;
+  if (!Array.isArray(session.events)) return false;
+  if (!Array.isArray(session.searches)) return false;
+  if (!Array.isArray(session.pageVisits)) return false;
+  
+  // Validate timestamp format
+  try {
+    new Date(session.startTime);
+    if (session.endTime) new Date(session.endTime);
+  } catch (e) {
+    return false;
+  }
+  
+  // Basic validation of events structure
+  for (const event of session.events) {
+    if (!event.type || !event.timestamp) return false;
+    try {
+      new Date(event.timestamp);
+    } catch (e) {
+      return false;
+    }
+  }
+  
+  return true;
+}
+
 async function deleteSession(sessionId) {
   return new Promise((resolve, reject) => {
     chrome.storage.local.get([STORAGE_KEYS.SESSIONS], (result) => {
@@ -1518,6 +1636,13 @@ async function exportSession(sessionId, format = 'json') {
             text += `${time} - Metadata updated for page: ${event.url}\n`;
             if (event.metadata && event.metadata.title) {
               text += `    Title: ${event.metadata.title}\n`;
+            }
+          } else if (event.type === 'session_ended') {
+            text += `${time} - ======= SESSION ENDED =======\n`;
+          } else if (event.type === 'session_resumed') {
+            text += `${time} - ======= SESSION RESUMED =======\n`;
+            if (event.previousEndTime) {
+              text += `    Previous session ended: ${formatTimestamp(event.previousEndTime)}\n`;
             }
           }
         });

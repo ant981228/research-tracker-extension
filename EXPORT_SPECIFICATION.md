@@ -175,6 +175,25 @@ The `chronologicalEvents` array contains all events in chronological order. This
 }
 ```
 
+- For events with `type: "session_ended"`, the structure is:
+
+```json
+{
+  "type": "session_ended",           // Event type identifier
+  "timestamp": "ISO8601 timestamp"   // When the session was stopped
+}
+```
+
+- For events with `type: "session_resumed"`, the structure is:
+
+```json
+{
+  "type": "session_resumed",         // Event type identifier
+  "timestamp": "ISO8601 timestamp",  // When the session was resumed
+  "previousEndTime": "ISO8601 timestamp" // When the session was previously ended
+}
+```
+
 ## Data Relationships
 
 The data model establishes several important relationships:
@@ -216,6 +235,18 @@ The `params` object in search events contains all query parameters from the sear
 - `start`: Pagination offset
 - `hl`: Language
 - `filter`: Various filtering options
+
+### Session Resumption
+
+Sessions can be resumed after they have been completed. When a session is resumed:
+
+1. The completed session is removed from the completed sessions list
+2. A `session_resumed` event is added to the timeline showing when resumption occurred
+3. The session's `endTime` is cleared to indicate it's active again
+4. New activity continues to be appended to the existing session data
+5. When stopped again, a new `session_ended` event is recorded
+
+This allows for discontinuous research sessions while maintaining a complete timeline of all activity. The session break periods are clearly marked in both JSON and TXT exports.
 
 ### Metadata Extraction
 
@@ -278,6 +309,10 @@ The TXT export presents the same information in a human-readable format with the
 3. **Searches**: List of all searches with timestamps and notes
 4. **Content Pages**: List of all pages visited with metadata and notes
 5. **Chronological Events**: List of all events in time order
+
+Session breaks are clearly marked in the chronological events section with visual separators:
+- `======= SESSION ENDED =======` when a session is stopped
+- `======= SESSION RESUMED =======` when a session is resumed, including the timestamp of when it was previously ended
 
 While the TXT format is human-readable, the JSON format is recommended for intake processing due to its structured nature.
 

@@ -29,70 +29,6 @@ Research Tracker helps you document your research process by automatically track
 - Notes are timestamped and associated with their context
 - Export includes all notes with their relationships preserved
 
-### 🎯 Site-Specific Extractors
-Enhanced metadata extraction for:
-
-**Academic & Research Sites:**
-- arXiv.org - Preprint papers with abstracts and author lists
-- PubMed/NCBI - Medical and life science research
-- JSTOR - Academic journal articles
-- DOI.org - Digital Object Identifier resolution
-- NBER - National Bureau of Economic Research papers
-- SSRN - Social Science Research Network
-
-**Academic Publishers:**
-- ScienceDirect/Elsevier - Scientific journals
-- Nature - Nature Publishing Group journals
-- Springer - Academic books and journals
-- Wiley - Scientific and technical content
-- Duke University Press - Academic publications
-- SAGE Publications - Academic journals
-
-**Major News Organizations:**
-- New York Times, Washington Post, Wall Street Journal
-- BBC, CNN, ABC News, NBC News, CBS News, CNBC
-- The Guardian, Reuters, Bloomberg
-- Los Angeles Times, USA Today, Newsweek
-- Associated Press (AP News)
-
-**International News:**
-- Deutsche Welle (DW) - German international broadcaster
-- The Globe and Mail - Canadian news
-- Times of India, Indian Express, Hindustan Times
-- Bangkok Post - Thai news
-- The Japan Times - Japanese news in English
-
-**Political News:**
-- The Hill, National Review, The Daily Beast
-- New York Post
-
-**Think Tanks & Research Organizations:**
-- Brookings Institution, RAND Corporation, Pew Research Center
-- Cato Institute, Heritage Foundation, Urban Institute
-- Carnegie Endowment, Atlantic Council, Hudson Institute
-- Center for a New American Security (CNAS)
-- American Progress, Hoover Institution
-- Tax Policy Center, Baker Institute
-- Resources for the Future (RFF)
-- Foreign Policy Research Institute (FPRI)
-- Reason Foundation, Mercatus Center
-- Center on Budget and Policy Priorities (CBPP)
-- Economic Policy Institute (EPI)
-- Milken Institute, Third Way
-- Competitive Enterprise Institute (CEI)
-- R Street Institute, Aspen Institute
-
-**Social Media & Forums:**
-- Reddit - Subreddit posts and comments
-- Twitter/X - Tweets and threads
-
-**Other Sites:**
-- Wikipedia - Encyclopedia articles
-- Arctic Research WordPress - Arctic research blog
-- Arctic News Blogspot - Arctic climate news
-- Mongabay - Environmental news
-- High North News - Arctic region news
-
 ### 💾 Export Options
 - **JSON format**: Structured data for programmatic processing
 - **TXT format**: Human-readable summary of your research
@@ -186,6 +122,71 @@ For issues, feature requests, or questions:
 - Check existing documentation
 - Review the troubleshooting guide
 - Submit an issue on GitHub (if applicable)
+
+## Site-Specific Extractors
+
+Enhanced metadata extraction for:
+
+**Academic & Research Sites:**
+- arXiv.org - Preprint papers with abstracts and author lists
+- PubMed/NCBI - Medical and life science research
+- JSTOR - Academic journal articles
+- DOI.org - Digital Object Identifier resolution
+- NBER - National Bureau of Economic Research papers
+- SSRN - Social Science Research Network
+
+**Academic Publishers:**
+- ScienceDirect/Elsevier - Scientific journals
+- Nature - Nature Publishing Group journals
+- Springer - Academic books and journals
+- Wiley - Scientific and technical content
+- Duke University Press - Academic publications
+- SAGE Publications - Academic journals
+
+**Major News Organizations:**
+- New York Times, Washington Post, Wall Street Journal
+- BBC, CNN, ABC News, NBC News, CBS News, CNBC
+- The Guardian, Reuters, Bloomberg
+- Los Angeles Times, USA Today, Newsweek
+- Associated Press (AP News)
+
+**International News:**
+- Deutsche Welle (DW) - German international broadcaster
+- The Globe and Mail - Canadian news
+- Times of India, Indian Express, Hindustan Times
+- Bangkok Post - Thai news
+- The Japan Times - Japanese news in English
+
+**Political News:**
+- The Hill, National Review, The Daily Beast
+- New York Post
+
+**Think Tanks & Research Organizations:**
+- Brookings Institution, RAND Corporation, Pew Research Center
+- Cato Institute, Heritage Foundation, Urban Institute
+- Carnegie Endowment, Atlantic Council, Hudson Institute
+- Center for a New American Security (CNAS)
+- American Progress, Hoover Institution
+- Tax Policy Center, Baker Institute
+- Resources for the Future (RFF)
+- Foreign Policy Research Institute (FPRI)
+- Reason Foundation, Mercatus Center
+- Center on Budget and Policy Priorities (CBPP)
+- Economic Policy Institute (EPI)
+- Milken Institute, Third Way
+- Competitive Enterprise Institute (CEI)
+- R Street Institute, Aspen Institute
+
+**Social Media & Forums:**
+- Reddit - Subreddit posts and comments
+- Twitter/X - Tweets and threads
+
+**Other Sites:**
+- Wikipedia - Encyclopedia articles
+- Arctic Research WordPress - Arctic research blog
+- Arctic News Blogspot - Arctic climate news
+- Mongabay - Environmental news
+- High North News - Arctic region news
 
 ## License
 

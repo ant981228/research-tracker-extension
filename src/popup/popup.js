@@ -1127,6 +1127,11 @@ function displaySessions(sessions) {
     const sessionActions = document.createElement('div');
     sessionActions.className = 'session-actions';
     
+    const resumeBtn = document.createElement('button');
+    resumeBtn.className = 'resume-btn';
+    resumeBtn.textContent = 'Resume';
+    resumeBtn.addEventListener('click', () => resumeSession(session.id));
+    
     const exportJsonBtn = document.createElement('button');
     exportJsonBtn.className = 'export-btn';
     exportJsonBtn.textContent = 'Export JSON';
@@ -1146,6 +1151,7 @@ function displaySessions(sessions) {
       }
     });
     
+    sessionActions.appendChild(resumeBtn);
     sessionActions.appendChild(exportJsonBtn);
     sessionActions.appendChild(exportTxtBtn);
     sessionActions.appendChild(deleteBtn);
@@ -1171,6 +1177,26 @@ function exportSession(sessionId, format) {
     
     if (response.success) {
       downloadData(response.data, `research-session-${sessionId}.${format}`);
+    }
+  });
+}
+
+function resumeSession(sessionId) {
+  chrome.runtime.sendMessage({ 
+    action: 'resumeSession',
+    sessionId
+  }, response => {
+    if (chrome.runtime.lastError) {
+      console.error(chrome.runtime.lastError);
+      return;
+    }
+    
+    if (response.success) {
+      // Refresh UI to show resumed session as current
+      refreshStatus();
+      loadSessionsAndDisplay();
+    } else {
+      alert('Error resuming session: ' + (response.error || 'Unknown error'));
     }
   });
 }
