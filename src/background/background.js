@@ -207,29 +207,33 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       break;
     
     case 'getStatus':
-      if (currentSession) {
-        // Get recent pages and searches for the UI
-        const recentPages = currentSession.pageVisits.slice(-5).reverse();
-        const recentSearches = currentSession.searches.slice(-5).reverse();
-        
-        sendResponse({ 
-          isRecording,
-          currentSession: {
-            id: currentSession.id,
-            name: currentSession.name,
-            startTime: currentSession.startTime,
-            isPaused: currentSession.isPaused,
-            events: currentSession.events.length,
-            recentPages,
-            recentSearches
-          }
-        });
-      } else {
-        sendResponse({ 
-          isRecording,
-          currentSession: null
-        });
-      }
+      // Ensure state is loaded before responding
+      ensureStateLoaded().then(() => {
+        if (currentSession) {
+          // Get recent pages and searches for the UI
+          const recentPages = currentSession.pageVisits.slice(-5).reverse();
+          const recentSearches = currentSession.searches.slice(-5).reverse();
+          
+          sendResponse({ 
+            isRecording,
+            currentSession: {
+              id: currentSession.id,
+              name: currentSession.name,
+              startTime: currentSession.startTime,
+              isPaused: currentSession.isPaused,
+              events: currentSession.events.length,
+              recentPages,
+              recentSearches
+            }
+          });
+        } else {
+          sendResponse({ 
+            isRecording,
+            currentSession: null
+          });
+        }
+      });
+      return true; // Async response
       break;
       
     case 'renameCurrentSession':
@@ -788,6 +792,37 @@ function checkActivity() {
     
     // Log to console for debugging
     console.log(`Extension inactive for: ${Math.round(inactiveTime / 1000)} seconds`);
+  });
+}
+
+// Ensures state is loaded from storage if not already in memory
+function ensureStateLoaded() {
+  return new Promise((resolve) => {
+    // If we have both state variables, we're good
+    if ((isRecording && currentSession) || (!isRecording && !currentSession)) {
+      resolve();
+      return;
+    }
+    
+    // Otherwise, load from storage
+    console.log('State mismatch detected, loading from storage...');
+    chrome.storage.local.get([
+      STORAGE_KEYS.IS_RECORDING,
+      STORAGE_KEYS.CURRENT_SESSION
+    ], (result) => {
+      isRecording = result[STORAGE_KEYS.IS_RECORDING] || false;
+      currentSession = result[STORAGE_KEYS.CURRENT_SESSION] || null;
+      
+      console.log('State loaded from storage:', { isRecording, hasSession: !!currentSession });
+      
+      // If we're recording but have a session, re-setup listeners
+      if (isRecording && currentSession) {
+        setupRecordingListeners();
+        startAutosave();
+      }
+      
+      resolve();
+    });
   });
 }
 

@@ -363,6 +363,7 @@ function init() {
   updateActivityStatus();
   
   // Get current status
+  console.log('Popup: Initializing - getting current status...');
   refreshStatus();
   
   // Get current URL for adding notes
@@ -388,12 +389,14 @@ function refreshStatus(resetSelection = false) {
     selectedPageUrl = null;
   }
 
+  console.log('Popup: Requesting status from background...');
   chrome.runtime.sendMessage({ action: 'getStatus' }, response => {
     if (chrome.runtime.lastError) {
-      console.error(chrome.runtime.lastError);
+      console.error('Popup: Error getting status:', chrome.runtime.lastError);
       return;
     }
     
+    console.log('Popup: Received status response:', response);
     updateUI(response);
   });
 }
