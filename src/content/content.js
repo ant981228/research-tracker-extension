@@ -1,10 +1,10 @@
 // Helper functions for search engines
 const SEARCH_EXTRACTORS = {
-  GOOGLE: extractGoogleResults,
   GOOGLE_SCHOLAR: extractGoogleScholarResults,
+  GOOGLE_NEWS: extractGoogleNewsResults,
+  GOOGLE: extractGoogleResults,
   BING: extractBingResults,
   DUCKDUCKGO: extractDuckDuckGoResults,
-  GOOGLE_NEWS: extractGoogleNewsResults,
   LEXIS: extractLexisResults
 };
 

@@ -34,12 +34,16 @@ const INACTIVITY_WARNING_THRESHOLD_MS = 5 * 60000; // 5 minutes
 
 // Search engine patterns
 const SEARCH_ENGINES = {
-  GOOGLE: {
-    domains: ['google.com', 'www.google.com'],
-    queryParam: 'q'
-  },
   GOOGLE_SCHOLAR: {
     domains: ['scholar.google.com'],
+    queryParam: 'q'
+  },
+  GOOGLE_NEWS: {
+    domains: ['news.google.com'],
+    queryParam: 'q'
+  },
+  GOOGLE: {
+    domains: ['google.com', 'www.google.com'],
     queryParam: 'q'
   },
   BING: {
@@ -48,10 +52,6 @@ const SEARCH_ENGINES = {
   },
   DUCKDUCKGO: {
     domains: ['duckduckgo.com'],
-    queryParam: 'q'
-  },
-  GOOGLE_NEWS: {
-    domains: ['news.google.com'],
     queryParam: 'q'
   },
   LEXIS: {
