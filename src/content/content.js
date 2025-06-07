@@ -4393,6 +4393,11 @@ function shouldExcludeCitationPreview() {
     return true;
   }
   
+  // Check for specific GitHub subdirectory
+  if (hostname === 'github.com' && url.includes('/ant981228')) {
+    return true;
+  }
+  
   // Specific site exclusions
   const excludedDomains = [
     'ant981228.github.io',
@@ -4419,10 +4424,7 @@ function shouldExcludeCitationPreview() {
     'snapchat.com',
     'www.snapchat.com',
     // SSRN download pages
-    'download.ssrn.com',
-    // HeinOnline
-    'heinonline.org',
-    'www.heinonline.org'
+    'download.ssrn.com'
   ];
   
   // Check if current hostname is in excluded list (exact match)
@@ -4441,6 +4443,29 @@ function shouldExcludeCitationPreview() {
   
   // Check for Google search pages (various TLDs)
   if (hostname.match(/^(www\.)?google\.[a-z.]+$/) && url.includes('/search')) {
+    return true;
+  }
+  
+  // Check for Lexis search pages (but not document pages)
+  const lexisDomains = ['advance.lexis.com', 'www.lexis.com', 'lexisnexis.com', 'www.lexisnexis.com'];
+  const normalizedLexisDomains = lexisDomains.map(d => d.replace(/[-_.]/g, ''));
+  
+  // Check if this is a Lexis domain (including proxied versions)
+  let isLexisDomain = false;
+  if (lexisDomains.includes(hostname)) {
+    isLexisDomain = true;
+  } else {
+    // Check normalized/proxied versions
+    for (const normalizedLexis of normalizedLexisDomains) {
+      if (normalizedHostname.includes(normalizedLexis)) {
+        isLexisDomain = true;
+        break;
+      }
+    }
+  }
+  
+  // If it's a Lexis domain, only exclude if it's a search page
+  if (isLexisDomain && url.includes('/search/')) {
     return true;
   }
   
