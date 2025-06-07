@@ -1919,7 +1919,11 @@ async function exportSession(sessionId, format = 'json') {
           chronologicalEvents: session.events
         };
         
-        resolve(JSON.stringify(exportData, null, 2));
+        resolve({
+          data: JSON.stringify(exportData, null, 2),
+          sessionName: exportData.name,
+          sessionId: session.id
+        });
       } else if (format === 'txt') {
         // Simple text format
         const sessionName = session.name || `Research Session ${new Date(session.startTime).toLocaleDateString()}`;
@@ -2065,7 +2069,11 @@ async function exportSession(sessionId, format = 'json') {
           }
         });
         
-        resolve(text);
+        resolve({
+          data: text,
+          sessionName: sessionName,
+          sessionId: session.id
+        });
       } else {
         reject('Unsupported export format');
       }

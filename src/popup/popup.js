@@ -1226,7 +1226,17 @@ function exportSession(sessionId, format) {
     }
     
     if (response.success) {
-      downloadData(response.data, `research-session-${sessionId}.${format}`);
+      // Generate a meaningful filename using session name and ID
+      const sessionName = response.data.sessionName || 'Unnamed Session';
+      const sessionId = response.data.sessionId || sessionId;
+      
+      // Clean session name for filename (remove invalid characters)
+      const cleanSessionName = sessionName.replace(/[^a-zA-Z0-9\s\-_]/g, '').replace(/\s+/g, '-');
+      
+      // Create filename: session-name_sessionId.format
+      const filename = `${cleanSessionName}_${sessionId}.${format}`;
+      
+      downloadData(response.data.data, filename);
     }
   });
 }
