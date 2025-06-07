@@ -810,29 +810,39 @@ function openNoteModal() {
     return;
   }
   
-  // Use the best available page title for the note target
-  const targetUrl = selectedPageUrl || currentUrl;
+  // Check if a title was already set by selectUrl() (e.g., for searches)
+  const currentNoteTarget = noteTargetEl.textContent;
+  const hasExistingTitle = currentNoteTarget && currentNoteTarget !== 'Selected Page' && currentNoteTarget !== 'Current Page';
   
-  // Get metadata if available to get the best title
-  chrome.runtime.sendMessage({
-    action: 'getPageMetadata',
-    url: targetUrl
-  }, (response) => {
-    chrome.tabs.query({ active: true, currentWindow: true }, tabs => {
-      const tab = tabs[0];
-      const metadata = (response && response.success && response.metadata) ? response.metadata : {};
-      const pageTitle = metadata.title || (tab ? tab.title : 'Selected Page') || 'Selected Page';
-      
-      // Set the note target
-      noteTargetEl.textContent = pageTitle;
-      
-      // Display the modal using our modal management system
-      showModal(noteModal, 'note');
-      
-      // Focus the note input
-      noteInput.focus();
+  if (hasExistingTitle) {
+    // Title was already set by selectUrl(), keep it and show the modal
+    showModal(noteModal, 'note');
+    noteInput.focus();
+  } else {
+    // No title set yet, get one from metadata/tab
+    const targetUrl = selectedPageUrl || currentUrl;
+    
+    // Get metadata if available to get the best title
+    chrome.runtime.sendMessage({
+      action: 'getPageMetadata',
+      url: targetUrl
+    }, (response) => {
+      chrome.tabs.query({ active: true, currentWindow: true }, tabs => {
+        const tab = tabs[0];
+        const metadata = (response && response.success && response.metadata) ? response.metadata : {};
+        const pageTitle = metadata.title || (tab ? tab.title : 'Selected Page') || 'Selected Page';
+        
+        // Set the note target only if we don't have an existing title
+        noteTargetEl.textContent = pageTitle;
+        
+        // Display the modal using our modal management system
+        showModal(noteModal, 'note');
+        
+        // Focus the note input
+        noteInput.focus();
+      });
     });
-  });
+  }
 }
 
 function closeNoteModal() {
