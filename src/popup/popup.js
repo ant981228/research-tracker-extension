@@ -1017,17 +1017,6 @@ function saveNote() {
       saveNoteBtn.textContent = '✓ Saved';
       saveNoteBtn.classList.add('saved');
       
-      // Reset selection after adding note to prevent duplicate notes
-      refreshStatus(true);
-      
-      // Reset UI selection state
-      document.querySelectorAll('.page-item.selected').forEach(el => {
-        el.classList.remove('selected');
-      });
-      
-      // Update note target label back to default
-      noteTargetEl.textContent = 'Current Page';
-      
       // Re-enable the button after a short delay
       setTimeout(() => {
         addNoteInProgress = false;
