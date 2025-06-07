@@ -4777,15 +4777,23 @@ function generateCitationPreview(metadata, url, title, settings) {
       monthNum = slashMatch[1].padStart(2, '0');
       day = slashMatch[2].padStart(2, '0');
     } else {
-      // Try to use Date parsing as last resort, but avoid timezone issues
-      const date = new Date(dateStr);
-      if (!isNaN(date.getTime())) {
-        year = date.getFullYear().toString();
-        monthNum = String(date.getMonth() + 1).padStart(2, '0');
-        day = String(date.getDate()).padStart(2, '0');
+      // Try to extract just a 4-digit year from the string as a fallback
+      const yearMatch = dateStr.match(/\b(19|20)\d{2}\b/);
+      if (yearMatch) {
+        year = yearMatch[0];
+        monthNum = '';
+        day = '';
       } else {
-        // If all parsing fails, return the original string
-        return { year: dateStr, yearShort: dateStr, month: '', monthNum: '', day: '', date: dateStr };
+        // Try to use Date parsing as last resort, but avoid timezone issues
+        const date = new Date(dateStr);
+        if (!isNaN(date.getTime())) {
+          year = date.getFullYear().toString();
+          monthNum = String(date.getMonth() + 1).padStart(2, '0');
+          day = String(date.getDate()).padStart(2, '0');
+        } else {
+          // If all parsing fails, return the original string
+          return { year: dateStr, yearShort: dateStr, month: '', monthNum: '', day: '', date: dateStr };
+        }
       }
     }
     

@@ -539,21 +539,85 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 // Helper functions (simplified versions)
                 const formatDateParts = (dateStr) => {
                   if (!dateStr) return { year: 'n.d.', yearShort: 'n.d.', month: '', monthNum: '', day: '', date: 'n.d.' };
-                  const date = new Date(dateStr);
-                  if (isNaN(date.getTime())) return { year: dateStr, yearShort: dateStr, month: '', monthNum: '', day: '', date: dateStr };
                   
-                  const year = date.getFullYear().toString();
+                  // Parse date components directly without timezone conversion
+                  let year, monthNum, day;
+                  
+                  // Try to extract year, month, day from various formats
+                  const isoMatch = dateStr.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/); // YYYY-MM-DD
+                  const yearOnlyMatch = dateStr.match(/^(\d{4})$/); // YYYY
+                  const yearMonthMatch = dateStr.match(/^(\d{4})-(\d{1,2})$/); // YYYY-MM
+                  const slashMatch = dateStr.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/); // MM/DD/YYYY
+                  
+                  if (isoMatch) {
+                    year = isoMatch[1];
+                    monthNum = isoMatch[2].padStart(2, '0');
+                    day = isoMatch[3].padStart(2, '0');
+                  } else if (yearOnlyMatch) {
+                    year = yearOnlyMatch[1];
+                    monthNum = '';
+                    day = '';
+                  } else if (yearMonthMatch) {
+                    year = yearMonthMatch[1];
+                    monthNum = yearMonthMatch[2].padStart(2, '0');
+                    day = '';
+                  } else if (slashMatch) {
+                    year = slashMatch[3];
+                    monthNum = slashMatch[1].padStart(2, '0');
+                    day = slashMatch[2].padStart(2, '0');
+                  } else {
+                    // Try to extract just a 4-digit year from the string as a fallback
+                    const yearMatch = dateStr.match(/\b(19|20)\d{2}\b/);
+                    if (yearMatch) {
+                      year = yearMatch[0];
+                      monthNum = '';
+                      day = '';
+                    } else {
+                      // Try to use Date parsing as last resort, but avoid timezone issues
+                      const date = new Date(dateStr);
+                      if (!isNaN(date.getTime())) {
+                        year = date.getFullYear().toString();
+                        monthNum = String(date.getMonth() + 1).padStart(2, '0');
+                        day = String(date.getDate()).padStart(2, '0');
+                      } else {
+                        // If all parsing fails, return the original string
+                        return { year: dateStr, yearShort: dateStr, month: '', monthNum: '', day: '', date: dateStr };
+                      }
+                    }
+                  }
+                  
                   const yearShort = year.slice(-2);
-                  const monthNum = String(date.getMonth() + 1).padStart(2, '0');
-                  const day = String(date.getDate()).padStart(2, '0');
+                  
+                  // Generate month name from month number
+                  let month = '';
+                  if (monthNum) {
+                    const monthNames = [
+                      'January', 'February', 'March', 'April', 'May', 'June',
+                      'July', 'August', 'September', 'October', 'November', 'December'
+                    ];
+                    const monthIndex = parseInt(monthNum) - 1;
+                    if (monthIndex >= 0 && monthIndex < 12) {
+                      month = monthNames[monthIndex];
+                    }
+                  }
+                  
+                  // Format the date string
+                  let formattedDate;
+                  if (monthNum && day) {
+                    formattedDate = `${monthNum}/${day}/${year}`;
+                  } else if (monthNum) {
+                    formattedDate = `${monthNum}/${year}`;
+                  } else {
+                    formattedDate = year;
+                  }
                   
                   return {
                     year: year,
                     yearShort: yearShort,
-                    month: date.toLocaleDateString('en-US', { month: 'long' }),
+                    month: month,
                     monthNum: monthNum,
                     day: day,
-                    date: `${monthNum}/${day}/${year}`
+                    date: formattedDate
                   };
                 };
                 
