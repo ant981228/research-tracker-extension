@@ -4292,22 +4292,17 @@ document.addEventListener('keydown', async (e) => {
     let field, parsedValue, originalValue = selectedText.trim();
     
     switch (e.key) {
-      case '1': // Title
-        field = 'title';
-        parsedValue = parseTitle(selectedText);
-        break;
-        
-      case '2': // Author
+      case '1': // Author
         field = 'author';
         parsedValue = parseAuthors(selectedText);
         break;
         
-      case '3': // Quals
+      case '2': // Quals
         field = 'quals';
         parsedValue = originalValue; // Just trim, no parsing needed
         break;
         
-      case '4': // Date
+      case '3': // Date
         field = 'publishDate';
         const parsedDate = parseDate(selectedText);
         if (parsedDate) {
@@ -4320,7 +4315,12 @@ document.addEventListener('keydown', async (e) => {
         }
         break;
         
-      case '5': // Publisher (moved from 4)
+      case '4': // Title
+        field = 'title';
+        parsedValue = parseTitle(selectedText);
+        break;
+        
+      case '5': // Publisher
         field = 'publisher';
         parsedValue = originalValue; // Just trim
         break;
