@@ -4386,11 +4386,16 @@ async function updateCurrentPageMetadata(field, value) {
 
 // Keyboard shortcut handler
 document.addEventListener('keydown', async (e) => {
-  console.log('Research Tracker: Key pressed:', e.key, 'Ctrl:', e.ctrlKey, 'Shift:', e.shiftKey, 'Alt:', e.altKey);
+  // Detect operating system for modifier key
+  const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+  const modifierKey = isMac ? e.metaKey : e.ctrlKey;
+  const modifierName = isMac ? 'Cmd' : 'Ctrl';
   
-  // Check for Ctrl+[1-7]
-  if (e.ctrlKey && !e.shiftKey && !e.altKey && e.key >= '1' && e.key <= '7') {
-    console.log('Research Tracker: Ctrl+' + e.key + ' detected');
+  console.log(`Research Tracker: Key pressed:`, e.key, `${modifierName}:`, modifierKey, 'Shift:', e.shiftKey, 'Alt:', e.altKey);
+  
+  // Check for Cmd/Ctrl+[1-7]
+  if (modifierKey && !e.shiftKey && !e.altKey && e.key >= '1' && e.key <= '7') {
+    console.log(`Research Tracker: ${modifierName}+${e.key} detected`);
     e.preventDefault();
     e.stopPropagation();
     e.stopImmediatePropagation();
@@ -4465,7 +4470,7 @@ document.addEventListener('keydown', async (e) => {
     showToast(`${fieldName} updated: ${parsedValue}`);
   }
   
-  // Check for Ctrl+q (copy citation)
+  // Check for Ctrl+q (copy citation) - always use Ctrl, even on Mac
   if (e.ctrlKey && !e.shiftKey && !e.altKey && e.key === 'q') {
     console.log('Research Tracker: Ctrl+q detected - Copy Citation');
     e.preventDefault();
@@ -4494,10 +4499,12 @@ document.addEventListener('keydown', async (e) => {
 }, true); // Use capture phase
 
 // Log that keyboard shortcuts are initialized
+const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+const modifierName = isMac ? 'Cmd' : 'Ctrl';
 console.log('Research Tracker: Keyboard shortcuts initialized.');
-console.log('  Ctrl+1: Title | Ctrl+2: Author | Ctrl+3: Quals');
-console.log('  Ctrl+4: Date | Ctrl+5: Publisher | Ctrl+6: Journal | Ctrl+7: DOI');
-console.log('  Ctrl+q: Copy citation for current page');
+console.log(`  ${modifierName}+1: Author | ${modifierName}+2: Quals | ${modifierName}+3: Date`);
+console.log(`  ${modifierName}+4: Title | ${modifierName}+5: Publisher | ${modifierName}+6: Journal | ${modifierName}+7: DOI`);
+console.log(`  Ctrl+q: Copy citation for current page`);
 
 // ===== CITATION PREVIEW FUNCTIONALITY =====
 
