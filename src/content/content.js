@@ -4852,6 +4852,52 @@ function generateCitationPreview(metadata, url, title, settings) {
   const accessDateShort = `${String(today.getMonth() + 1).padStart(2, '0')}/${String(today.getDate()).padStart(2, '0')}/${today.getFullYear()}`;
   const authorFormats = formatAuthors(metadata.author, settings.format);
   
+  // Check if URL should be replaced with database name
+  let displayUrl = url;
+  const hostname = new URL(url).hostname;
+  const normalizedHostname = hostname.replace(/[-_.]/g, '');
+  
+  // Check for HeinOnline domains
+  const heinDomains = ['heinonline.org', 'www.heinonline.org'];
+  const normalizedHeinDomains = heinDomains.map(d => d.replace(/[-_.]/g, ''));
+  
+  let isHeinDomain = false;
+  if (heinDomains.includes(hostname)) {
+    isHeinDomain = true;
+  } else {
+    // Check normalized/proxied versions
+    for (const normalizedHein of normalizedHeinDomains) {
+      if (normalizedHostname.includes(normalizedHein)) {
+        isHeinDomain = true;
+        break;
+      }
+    }
+  }
+  
+  // Check for Lexis domains
+  const lexisDomains = ['advance.lexis.com', 'www.lexis.com', 'lexisnexis.com', 'www.lexisnexis.com'];
+  const normalizedLexisDomains = lexisDomains.map(d => d.replace(/[-_.]/g, ''));
+  
+  let isLexisDomain = false;
+  if (lexisDomains.includes(hostname)) {
+    isLexisDomain = true;
+  } else {
+    // Check normalized/proxied versions
+    for (const normalizedLexis of normalizedLexisDomains) {
+      if (normalizedHostname.includes(normalizedLexis)) {
+        isLexisDomain = true;
+        break;
+      }
+    }
+  }
+  
+  // Replace URL with database name if applicable
+  if (isHeinDomain) {
+    displayUrl = 'HeinOnline';
+  } else if (isLexisDomain) {
+    displayUrl = 'Lexis';
+  }
+  
   const variables = {
     author: authorFormats.full,
     authorShort: authorFormats.short,
@@ -4866,7 +4912,7 @@ function generateCitationPreview(metadata, url, title, settings) {
     journal: metadata.journal || '',
     doi: metadata.doi || '',
     quals: metadata.quals || '',
-    url: url,
+    url: displayUrl,
     accessDate: accessDate,
     accessDateShort: accessDateShort
   };
