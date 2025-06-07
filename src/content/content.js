@@ -4,7 +4,8 @@ const SEARCH_EXTRACTORS = {
   GOOGLE_SCHOLAR: extractGoogleScholarResults,
   BING: extractBingResults,
   DUCKDUCKGO: extractDuckDuckGoResults,
-  GOOGLE_NEWS: extractGoogleNewsResults
+  GOOGLE_NEWS: extractGoogleNewsResults,
+  LEXIS: extractLexisResults
 };
 
 // Site-specific metadata extractors
@@ -1266,13 +1267,144 @@ function extractGoogleNewsResults() {
   }
 }
 
+function extractLexisResults() {
+  try {
+    const results = [];
+    
+    // Get the search query from URL parameter
+    const urlParams = new URLSearchParams(window.location.search);
+    let query = urlParams.get('pdsearchterms');
+    
+    // Decode the query if it exists
+    if (query) {
+      try {
+        query = decodeURIComponent(query);
+      } catch (e) {
+        // Keep original if decoding fails
+      }
+    }
+    
+    // Try different selectors for Lexis search results
+    // Lexis uses various layouts depending on the search type
+    const resultSelectors = [
+      '.doc-title', // Common document title selector
+      'h2.doc-title',
+      'a.doc-title',
+      '.result-title',
+      '.document-title',
+      '[data-document-title]',
+      '.search-result-item h2',
+      '.search-result-item a[href*="/document"]'
+    ];
+    
+    let searchItems = [];
+    for (const selector of resultSelectors) {
+      searchItems = document.querySelectorAll(selector);
+      if (searchItems.length > 0) break;
+    }
+    
+    // If no results found with specific selectors, try more generic approach
+    if (searchItems.length === 0) {
+      // Look for links that contain document IDs
+      searchItems = document.querySelectorAll('a[href*="/document/"]');
+    }
+    
+    searchItems.forEach((item, index) => {
+      try {
+        let title = '';
+        let url = '';
+        let snippet = '';
+        let source = '';
+        
+        // Extract title
+        if (item.tagName === 'A') {
+          title = item.textContent.trim();
+          url = item.href;
+        } else {
+          // Look for a link within the element
+          const linkEl = item.querySelector('a');
+          if (linkEl) {
+            title = linkEl.textContent.trim() || item.textContent.trim();
+            url = linkEl.href;
+          } else {
+            title = item.textContent.trim();
+          }
+        }
+        
+        // Try to find snippet/abstract in parent or sibling elements
+        const parentEl = item.closest('.search-result-item, .document-item, .result-item');
+        if (parentEl) {
+          const snippetEl = parentEl.querySelector('.snippet, .abstract, .excerpt, .document-snippet');
+          if (snippetEl) {
+            snippet = snippetEl.textContent.trim();
+          }
+          
+          // Try to find source information
+          const sourceEl = parentEl.querySelector('.source, .publication, .doc-source');
+          if (sourceEl) {
+            source = sourceEl.textContent.trim();
+          }
+        }
+        
+        if (title) {
+          const result = {
+            position: index + 1,
+            title: title,
+            url: url,
+            snippet: snippet,
+            source: source
+          };
+          
+          results.push(result);
+        }
+      } catch (e) {
+        console.error('Error processing Lexis result item:', e);
+      }
+    });
+    
+    return {
+      query: query || 'Unknown query',
+      count: results.length,
+      results
+    };
+  } catch (e) {
+    console.error('Error extracting Lexis results:', e);
+    return { error: e.message };
+  }
+}
+
 // Track clicks on search results
 document.addEventListener('click', (event) => {
   // Only track if we're on a search engine
   const hostname = window.location.hostname;
-  const isSearchEngine = ['google.com', 'www.google.com', 'scholar.google.com', 
-                           'bing.com', 'www.bing.com', 'duckduckgo.com', 
-                           'news.google.com'].includes(hostname);
+  const searchEngineDomains = [
+    'google.com', 'www.google.com', 'scholar.google.com', 
+    'bing.com', 'www.bing.com', 'duckduckgo.com', 
+    'news.google.com', 'advance.lexis.com', 'www.lexis.com',
+    'lexisnexis.com', 'www.lexisnexis.com'
+  ];
+  
+  // Check if current hostname is a search engine (including proxied versions)
+  let isSearchEngine = false;
+  if (searchEngineDomains.includes(hostname)) {
+    isSearchEngine = true;
+  } else {
+    // Check for proxied versions
+    const normalizedHostname = hostname.replace(/[-_.]/g, '').toLowerCase();
+    for (const domain of searchEngineDomains) {
+      const normalizedDomain = domain.replace(/[-_.]/g, '').toLowerCase();
+      if (normalizedHostname.includes(normalizedDomain)) {
+        isSearchEngine = true;
+        break;
+      }
+      // Check hyphenated version
+      const hyphenatedDomain = domain.replace(/\./g, '-');
+      if (hostname.includes(hyphenatedDomain)) {
+        isSearchEngine = true;
+        break;
+      }
+    }
+  }
   
   if (!isSearchEngine) return;
   
@@ -1282,12 +1414,27 @@ document.addEventListener('click', (event) => {
   while (target && target !== document) {
     if (target.tagName === 'A' && target.href) {
       // This seems to be a link click
+      // Get the appropriate query parameter based on the search engine
+      let sourceQuery = new URLSearchParams(window.location.search).get('q');
+      
+      // For Lexis, check pdsearchterms parameter
+      if (!sourceQuery) {
+        sourceQuery = new URLSearchParams(window.location.search).get('pdsearchterms');
+        if (sourceQuery) {
+          try {
+            sourceQuery = decodeURIComponent(sourceQuery);
+          } catch (e) {
+            // Keep encoded version if decode fails
+          }
+        }
+      }
+      
       const resultData = {
         url: target.href,
         text: target.textContent.trim(),
         timestamp: new Date().toISOString(),
         sourceUrl: window.location.href,
-        sourceQuery: new URLSearchParams(window.location.search).get('q')
+        sourceQuery: sourceQuery || ''
       };
       
       chrome.runtime.sendMessage({

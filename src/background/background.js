@@ -53,6 +53,10 @@ const SEARCH_ENGINES = {
   GOOGLE_NEWS: {
     domains: ['news.google.com'],
     queryParam: 'q'
+  },
+  LEXIS: {
+    domains: ['advance.lexis.com', 'www.lexis.com', 'lexisnexis.com', 'www.lexisnexis.com'],
+    queryParam: 'pdsearchterms' // Lexis uses pdsearchterms parameter
   }
 };
 
@@ -949,14 +953,53 @@ function handleNavigationCompleted(details) {
 }
 
 // Helpers
+function isProxiedDomain(hostname, targetDomains) {
+  // Check direct match first
+  if (targetDomains.includes(hostname)) {
+    return true;
+  }
+  
+  // Normalize hostname by removing common proxy patterns
+  const normalizedHostname = hostname
+    .replace(/[-_.]/g, '') // Remove punctuation
+    .toLowerCase();
+  
+  // Check each target domain
+  for (const domain of targetDomains) {
+    const normalizedDomain = domain.replace(/[-_.]/g, '').toLowerCase();
+    
+    // Check if the hostname contains the normalized domain
+    if (normalizedHostname.includes(normalizedDomain)) {
+      return true;
+    }
+    
+    // Also check for hyphenated versions (common in EZProxy)
+    const hyphenatedDomain = domain.replace(/\./g, '-');
+    if (hostname.includes(hyphenatedDomain)) {
+      return true;
+    }
+  }
+  
+  return false;
+}
+
 function checkForSearch(tab) {
   try {
     const url = new URL(tab.url);
     
     // Check if this is a known search engine
     for (const [engine, config] of Object.entries(SEARCH_ENGINES)) {
-      if (config.domains.includes(url.hostname)) {
-        const searchQuery = url.searchParams.get(config.queryParam);
+      if (isProxiedDomain(url.hostname, config.domains)) {
+        // Special handling for Lexis - check if it's actually a search page
+        if (engine === 'LEXIS') {
+          // Only treat as search if URL contains /search/
+          if (!url.pathname.includes('/search/')) {
+            // This is a Lexis document page, not a search page
+            return false;
+          }
+        }
+        
+        const searchQuery = config.queryParam ? url.searchParams.get(config.queryParam) : null;
         
         if (searchQuery) {
           // Gather all search parameters
@@ -965,11 +1008,22 @@ function checkForSearch(tab) {
             searchParams[key] = value;
           }
           
+          // Clean up the query for Lexis (decode URL encoding)
+          let cleanQuery = searchQuery;
+          if (engine === 'LEXIS') {
+            try {
+              cleanQuery = decodeURIComponent(searchQuery);
+            } catch (e) {
+              // If decoding fails, use the original
+              cleanQuery = searchQuery;
+            }
+          }
+          
           // Log search
           logSearch({
             engine,
             domain: url.hostname,
-            query: searchQuery,
+            query: cleanQuery,
             params: searchParams,
             url: tab.url,
             timestamp: new Date().toISOString(),
@@ -984,15 +1038,12 @@ function checkForSearch(tab) {
           
           return true; // This is a search engine page
         }
-      }
-    }
-    
-    // Special case: check if this is a search engine domain even without a query
-    // (like homepage of Google, Bing, etc.)
-    for (const config of Object.values(SEARCH_ENGINES)) {
-      if (config.domains.includes(url.hostname)) {
-        // This is a search engine, but without search parameters
-        return true;
+        
+        // For non-Lexis search engines, still return true even without query
+        // (e.g., Google homepage)
+        if (engine !== 'LEXIS') {
+          return true;
+        }
       }
     }
     
