@@ -478,60 +478,99 @@ function updatePageDisplay(url) {
         selectUrl(tab.url, tab.title || 'Untitled');
       }
       
-      // Get metadata first if available
+      // Check if this is a search page first
       chrome.runtime.sendMessage({
-        action: 'getPageMetadata',
+        action: 'checkIfSearchPage',
         url: tab.url
-      }, (response) => {
-        const metadata = (response && response.success && response.metadata) ? response.metadata : {};
-        const pageTitle = metadata.title || tab.title || 'Untitled';
+      }, (searchResponse) => {
+        const isSearchPage = searchResponse && searchResponse.isSearch;
+        const searchQuery = searchResponse && searchResponse.query;
         
-        // Display current page with best available title
-        const noteButton = isRecording ? '<button class="page-action-btn add-note-btn">Add Note</button>' : '';
-        currentPageEl.innerHTML = `
-          <div class="page-title">${pageTitle}</div>
-          <div class="page-url">${truncateUrl(tab.url)}</div>
-          <div class="page-time">Current page</div>
-          <div class="page-actions">
-            ${noteButton}
-            <button class="page-action-btn edit-metadata-btn">Edit Metadata</button>
-            <button class="page-action-btn copy-citation-btn">Copy Citation</button>
-          </div>
-        `;
-        
-        // Set up add note button handler (if recording)
-        const addNoteBtn = currentPageEl.querySelector('.add-note-btn');
-        if (addNoteBtn) {
-          addNoteBtn.addEventListener('click', (e) => {
-          e.stopPropagation(); // Prevent event bubbling
-          selectUrl(tab.url, pageTitle);
-          document.querySelectorAll('.page-item.selected').forEach(el => {
-            el.classList.remove('selected');
-          });
-          currentPageEl.classList.add('selected');
+        // Get metadata if available
+        chrome.runtime.sendMessage({
+          action: 'getPageMetadata',
+          url: tab.url
+        }, (response) => {
+          const metadata = (response && response.success && response.metadata) ? response.metadata : {};
           
-          // Open the note modal
-          openNoteModal();
-          });
-        }
-        
-        // Set up edit metadata button handler
-        currentPageEl.querySelector('.edit-metadata-btn').addEventListener('click', (e) => {
-          e.stopPropagation(); // Prevent event bubbling
-          selectUrl(tab.url, pageTitle);
-          document.querySelectorAll('.page-item.selected').forEach(el => {
-            el.classList.remove('selected');
-          });
-          currentPageEl.classList.add('selected');
+          // Determine the page title
+          let pageTitle;
+          if (isSearchPage && searchQuery) {
+            pageTitle = `Search: "${searchQuery}"`;
+          } else {
+            pageTitle = metadata.title || tab.title || 'Untitled';
+          }
           
-          // Open the metadata modal
-          openMetadataModal();
-        });
-        
-        // Set up copy citation button handler
-        currentPageEl.querySelector('.copy-citation-btn').addEventListener('click', (e) => {
-          e.stopPropagation(); // Prevent event bubbling
-          copyCitation(tab.url, pageTitle, e.target);
+          // Determine which buttons to show
+          const noteButton = isRecording ? '<button class="page-action-btn add-note-btn">Add Note</button>' : '';
+          let actionButtons;
+          
+          if (isSearchPage) {
+            // For search pages, only show Add Note button
+            actionButtons = `
+              <div class="page-actions">
+                ${noteButton}
+              </div>
+            `;
+          } else {
+            // For regular pages, show all buttons
+            actionButtons = `
+              <div class="page-actions">
+                ${noteButton}
+                <button class="page-action-btn edit-metadata-btn">Edit Metadata</button>
+                <button class="page-action-btn copy-citation-btn">Copy Citation</button>
+              </div>
+            `;
+          }
+          
+          // Display current page
+          currentPageEl.innerHTML = `
+            <div class="page-title">${pageTitle}</div>
+            <div class="page-url">${truncateUrl(tab.url)}</div>
+            <div class="page-time">Current page</div>
+            ${actionButtons}
+          `;
+          
+          // Set up add note button handler (if recording)
+          const addNoteBtn = currentPageEl.querySelector('.add-note-btn');
+          if (addNoteBtn) {
+            addNoteBtn.addEventListener('click', (e) => {
+            e.stopPropagation(); // Prevent event bubbling
+            selectUrl(tab.url, pageTitle);
+            document.querySelectorAll('.page-item.selected').forEach(el => {
+              el.classList.remove('selected');
+            });
+            currentPageEl.classList.add('selected');
+            
+            // Open the note modal
+            openNoteModal();
+            });
+          }
+          
+          // Set up edit metadata button handler (only for non-search pages)
+          const editMetadataBtn = currentPageEl.querySelector('.edit-metadata-btn');
+          if (editMetadataBtn) {
+            editMetadataBtn.addEventListener('click', (e) => {
+              e.stopPropagation(); // Prevent event bubbling
+              selectUrl(tab.url, pageTitle);
+              document.querySelectorAll('.page-item.selected').forEach(el => {
+                el.classList.remove('selected');
+              });
+              currentPageEl.classList.add('selected');
+              
+              // Open the metadata modal
+              openMetadataModal();
+            });
+          }
+          
+          // Set up copy citation button handler (only for non-search pages)
+          const copyCitationBtn = currentPageEl.querySelector('.copy-citation-btn');
+          if (copyCitationBtn) {
+            copyCitationBtn.addEventListener('click', (e) => {
+              e.stopPropagation(); // Prevent event bubbling
+              copyCitation(tab.url, pageTitle, e.target);
+            });
+          }
         });
       });
       

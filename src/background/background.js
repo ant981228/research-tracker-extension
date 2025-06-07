@@ -210,6 +210,70 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return true; // Keep the message channel open for async response
       break;
     
+    case 'checkIfSearchPage':
+      try {
+        if (message.url) {
+          const url = new URL(message.url);
+          
+          // Check if this is a known search engine
+          for (const [engine, config] of Object.entries(SEARCH_ENGINES)) {
+            if (isProxiedDomain(url.hostname, config.domains)) {
+              // Special handling for Lexis - check if it's actually a search page
+              if (engine === 'LEXIS') {
+                // Only treat as search if URL contains /search/
+                if (!url.pathname.includes('/search/')) {
+                  // This is a Lexis document page, not a search page
+                  continue;
+                }
+              }
+              
+              const searchQuery = config.queryParam ? url.searchParams.get(config.queryParam) : null;
+              
+              if (searchQuery) {
+                // Clean up the query for Lexis (decode URL encoding)
+                let cleanQuery = searchQuery;
+                if (engine === 'LEXIS') {
+                  try {
+                    cleanQuery = decodeURIComponent(searchQuery);
+                  } catch (e) {
+                    // If decoding fails, use the original
+                    cleanQuery = searchQuery;
+                  }
+                }
+                
+                sendResponse({ 
+                  isSearch: true, 
+                  engine: engine,
+                  query: cleanQuery 
+                });
+                return true;
+              }
+              
+              // For non-Lexis search engines, still return true even without query
+              // (e.g., Google homepage)
+              if (engine !== 'LEXIS') {
+                sendResponse({ 
+                  isSearch: true, 
+                  engine: engine,
+                  query: null 
+                });
+                return true;
+              }
+            }
+          }
+          
+          // Not a search page
+          sendResponse({ isSearch: false });
+        } else {
+          sendResponse({ isSearch: false, error: 'Missing URL' });
+        }
+      } catch (e) {
+        console.error('Error in checkIfSearchPage:', e);
+        sendResponse({ isSearch: false, error: e.message });
+      }
+      return true; // Keep the message channel open for async response
+      break;
+    
     case 'getStatus':
       // Ensure state is loaded before responding
       ensureStateLoaded().then(() => {
