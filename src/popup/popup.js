@@ -995,8 +995,9 @@ function saveNote() {
   
   // Set flag to prevent multiple submissions
   addNoteInProgress = true;
-  addNoteBtn.disabled = true;
-  addNoteBtn.textContent = 'Adding...';
+  const originalText = saveNoteBtn.textContent;
+  saveNoteBtn.disabled = true;
+  saveNoteBtn.textContent = 'Saving...';
   
   chrome.runtime.sendMessage({ 
     action: 'addNote',
@@ -1006,13 +1007,16 @@ function saveNote() {
     if (chrome.runtime.lastError) {
       console.error(chrome.runtime.lastError);
       addNoteInProgress = false;
-      addNoteBtn.disabled = false;
-      addNoteBtn.textContent = 'Add Note';
+      saveNoteBtn.disabled = false;
+      saveNoteBtn.textContent = originalText;
       return;
     }
     
     if (response.success) {
-      noteInput.value = '';
+      // Show success feedback on the save button
+      saveNoteBtn.textContent = '✓ Saved';
+      saveNoteBtn.classList.add('saved');
+      
       // Reset selection after adding note to prevent duplicate notes
       refreshStatus(true);
       
@@ -1024,14 +1028,12 @@ function saveNote() {
       // Update note target label back to default
       noteTargetEl.textContent = 'Current Page';
       
-      // Close the note modal and restore previous modal if applicable
-      closeNoteModal();
-      
       // Re-enable the button after a short delay
       setTimeout(() => {
         addNoteInProgress = false;
-        addNoteBtn.disabled = false;
-        addNoteBtn.textContent = 'Add Note';
+        saveNoteBtn.disabled = false;
+        saveNoteBtn.textContent = originalText;
+        saveNoteBtn.classList.remove('saved');
       }, 1000); // 1 second delay for UI feedback
       
     } else {
@@ -1039,20 +1041,20 @@ function saveNote() {
       if (response.rateLimited) {
         // Calculate wait time in seconds (rounded up)
         const waitTime = Math.ceil(response.waitTimeMs / 1000);
-        addNoteBtn.textContent = `Wait ${waitTime}s...`;
+        saveNoteBtn.textContent = `Wait ${waitTime}s...`;
         
         // Enable after the wait time
         setTimeout(() => {
           addNoteInProgress = false;
-          addNoteBtn.disabled = false;
-          addNoteBtn.textContent = 'Add Note';
+          saveNoteBtn.disabled = false;
+          saveNoteBtn.textContent = originalText;
         }, response.waitTimeMs);
       } else {
         // Other error
         alert('Error adding note: ' + (response.error || 'Unknown error'));
         addNoteInProgress = false;
-        addNoteBtn.disabled = false;
-        addNoteBtn.textContent = 'Add Note';
+        saveNoteBtn.disabled = false;
+        saveNoteBtn.textContent = originalText;
       }
     }
   });

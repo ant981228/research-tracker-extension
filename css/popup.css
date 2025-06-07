@@ -169,6 +169,10 @@ h1 {
   background-color: #27ae60 !important;
 }
 
+.action-btn.saved {
+  background-color: #27ae60 !important;
+}
+
 /* Window controls styles */
 .window-controls {
   float: right;
