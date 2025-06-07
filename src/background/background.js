@@ -1001,8 +1001,11 @@ function handleTabUpdated(tabId, changeInfo, tab) {
   // Check if this is a search engine
   const isSearchEngine = checkForSearch(tab);
   
-  // Only log as a page visit if it's not a search engine
-  if (!isSearchEngine) {
+  // Check if this is a new tab page or other browser page that shouldn't be logged
+  const isExcludedPage = isExcludedFromLogging(tab.url);
+  
+  // Only log as a page visit if it's not a search engine and not an excluded page
+  if (!isSearchEngine && !isExcludedPage) {
     logPageVisit({
       url: tab.url,
       title: tab.title || '',
@@ -1027,8 +1030,11 @@ function handleNavigationCompleted(details) {
     // Check if this is a search engine page
     const isSearchEngine = checkForSearch(tab);
     
-    // Only extract and update metadata for non-search pages
-    if (!isSearchEngine) {
+    // Check if this is an excluded page
+    const isExcludedPage = isExcludedFromLogging(tab.url);
+    
+    // Only extract and update metadata for non-search pages and non-excluded pages
+    if (!isSearchEngine && !isExcludedPage) {
       chrome.tabs.sendMessage(details.tabId, { action: 'extractMetadata' }, (response) => {
         if (chrome.runtime.lastError || !response) return;
         
@@ -1040,6 +1046,60 @@ function handleNavigationCompleted(details) {
 }
 
 // Helpers
+function isExcludedFromLogging(url) {
+  if (!url) return true;
+  
+  try {
+    // Common browser pages that shouldn't be logged
+    const excludedSchemes = [
+      'chrome:',
+      'chrome-extension:',
+      'edge:',
+      'safari:',
+      'firefox:',
+      'moz-extension:',
+      'about:',
+      'data:',
+      'blob:',
+      'file:'
+    ];
+    
+    // Check for excluded schemes
+    for (const scheme of excludedSchemes) {
+      if (url.startsWith(scheme)) {
+        return true;
+      }
+    }
+    
+    // Specific new tab page URLs
+    const newTabUrls = [
+      'chrome://newtab/',
+      'chrome://new-tab-page/',
+      'edge://newtab/',
+      'about:newtab',
+      'about:home',
+      'about:blank'
+    ];
+    
+    // Check for exact new tab URLs
+    for (const newTabUrl of newTabUrls) {
+      if (url === newTabUrl || url.startsWith(newTabUrl)) {
+        return true;
+      }
+    }
+    
+    // Check for empty or very short URLs that are likely browser pages
+    if (url.length < 10) {
+      return true;
+    }
+    
+    return false;
+  } catch (e) {
+    console.error('Error checking excluded URL:', e);
+    return true; // If there's an error, exclude it to be safe
+  }
+}
+
 function isProxiedDomain(hostname, targetDomains) {
   // Check direct match first
   if (targetDomains.includes(hostname)) {
