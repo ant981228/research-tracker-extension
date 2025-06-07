@@ -218,11 +218,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           // Check if this is a known search engine
           for (const [engine, config] of Object.entries(SEARCH_ENGINES)) {
             if (isProxiedDomain(url.hostname, config.domains)) {
-              // Special handling for Lexis - check if it's actually a search page
+              // Special handling for different search engines
               if (engine === 'LEXIS') {
                 // Only treat as search if URL contains /search/
                 if (!url.pathname.includes('/search/')) {
                   // This is a Lexis document page, not a search page
+                  continue;
+                }
+              } else if (engine === 'GOOGLE' || engine === 'GOOGLE_NEWS') {
+                // For Google domains, only treat as search if on search paths
+                if (!isGoogleSearchPath(url.pathname)) {
+                  // This is a Google content page (Books, Drive, Docs, etc.), not a search page
                   continue;
                 }
               }
@@ -249,8 +255,21 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 return true;
               }
               
-              // For non-Lexis search engines, still return true even without query
-              // (e.g., Google homepage)
+              // For Google domains, only return true if on search paths (even without query)
+              if (engine === 'GOOGLE' || engine === 'GOOGLE_NEWS') {
+                if (isGoogleSearchPath(url.pathname)) {
+                  sendResponse({ 
+                    isSearch: true, 
+                    engine: engine,
+                    query: null 
+                  });
+                  return true;
+                }
+                continue;
+              }
+              
+              // For other non-Lexis search engines, still return true even without query
+              // (e.g., Bing homepage, DuckDuckGo homepage)
               if (engine !== 'LEXIS') {
                 sendResponse({ 
                   isSearch: true, 
@@ -1051,6 +1070,75 @@ function isProxiedDomain(hostname, targetDomains) {
   return false;
 }
 
+// Helper function to determine if a Google path is a search page
+function isGoogleSearchPath(pathname) {
+  // Google search paths
+  const googleSearchPaths = [
+    '/search',     // Main search results
+    '/webhp',      // Search homepage
+    '/',           // Google homepage
+    ''             // Empty path (homepage)
+  ];
+  
+  // Check for exact matches
+  if (googleSearchPaths.includes(pathname)) {
+    return true;
+  }
+  
+  // Check if it starts with /search (for parameterized search URLs)
+  if (pathname.startsWith('/search')) {
+    return true;
+  }
+  
+  // These are NOT search pages (content/service pages)
+  const nonSearchPaths = [
+    '/books',      // Google Books
+    '/drive',      // Google Drive  
+    '/docs',       // Google Docs
+    '/sheets',     // Google Sheets
+    '/slides',     // Google Slides
+    '/forms',      // Google Forms
+    '/maps',       // Google Maps
+    '/gmail',      // Gmail
+    '/calendar',   // Google Calendar
+    '/photos',     // Google Photos
+    '/translate',  // Google Translate
+    '/youtube',    // YouTube
+    '/scholar',    // Google Scholar (handled separately)
+    '/news',       // Google News (handled separately)
+    '/images',     // Google Images (this is actually search, but handled by main search)
+    '/videos',     // Google Videos (this is actually search, but handled by main search)
+    '/shopping',   // Google Shopping (this is actually search, but handled by main search)
+    '/finance',    // Google Finance
+    '/flights',    // Google Flights
+    '/travel',     // Google Travel
+    '/keep',       // Google Keep
+    '/analytics',  // Google Analytics
+    '/ads',        // Google Ads
+    '/chrome',     // Chrome Web Store
+    '/play',       // Google Play
+    '/store',      // Google Store
+    '/workspace',  // Google Workspace
+    '/cloud',      // Google Cloud
+    '/developer',  // Google Developers
+    '/support',    // Google Support
+    '/about',      // About Google
+    '/policies',   // Google Policies
+    '/account',    // Google Account
+    '/settings'    // Google Settings
+  ];
+  
+  // Check if the path starts with any non-search path
+  for (const nonSearchPath of nonSearchPaths) {
+    if (pathname.startsWith(nonSearchPath)) {
+      return false;
+    }
+  }
+  
+  // Default to true for unknown Google paths (conservative approach for search detection)
+  return true;
+}
+
 function checkForSearch(tab) {
   try {
     const url = new URL(tab.url);
@@ -1058,11 +1146,17 @@ function checkForSearch(tab) {
     // Check if this is a known search engine
     for (const [engine, config] of Object.entries(SEARCH_ENGINES)) {
       if (isProxiedDomain(url.hostname, config.domains)) {
-        // Special handling for Lexis - check if it's actually a search page
+        // Special handling for different search engines
         if (engine === 'LEXIS') {
           // Only treat as search if URL contains /search/
           if (!url.pathname.includes('/search/')) {
             // This is a Lexis document page, not a search page
+            return false;
+          }
+        } else if (engine === 'GOOGLE' || engine === 'GOOGLE_NEWS') {
+          // For Google domains, only treat as search if on search paths
+          if (!isGoogleSearchPath(url.pathname)) {
+            // This is a Google content page (Books, Drive, Docs, etc.), not a search page
             return false;
           }
         }
@@ -1107,8 +1201,13 @@ function checkForSearch(tab) {
           return true; // This is a search engine page
         }
         
-        // For non-Lexis search engines, still return true even without query
-        // (e.g., Google homepage)
+        // For Google domains, only return true if on search paths (even without query)
+        if (engine === 'GOOGLE' || engine === 'GOOGLE_NEWS') {
+          return isGoogleSearchPath(url.pathname);
+        }
+        
+        // For other non-Lexis search engines, still return true even without query
+        // (e.g., Bing homepage, DuckDuckGo homepage)
         if (engine !== 'LEXIS') {
           return true;
         }
