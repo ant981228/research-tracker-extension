@@ -866,25 +866,29 @@ function checkActivity() {
 // Ensures state is loaded from storage if not already in memory
 function ensureStateLoaded() {
   return new Promise((resolve) => {
-    // If we have both state variables, we're good
-    if ((isRecording && currentSession) || (!isRecording && !currentSession)) {
-      resolve();
-      return;
-    }
-    
-    // Otherwise, load from storage
-    console.log('State mismatch detected, loading from storage...');
+    // Always load from storage to ensure we have the latest state
+    // This is especially important when the service worker wakes up from sleep
+    console.log('Loading state from storage...');
     chrome.storage.local.get([
       STORAGE_KEYS.IS_RECORDING,
       STORAGE_KEYS.CURRENT_SESSION
     ], (result) => {
+      const wasRecording = isRecording;
+      const hadSession = !!currentSession;
+      
       isRecording = result[STORAGE_KEYS.IS_RECORDING] || false;
       currentSession = result[STORAGE_KEYS.CURRENT_SESSION] || null;
       
-      console.log('State loaded from storage:', { isRecording, hasSession: !!currentSession });
+      console.log('State loaded from storage:', { 
+        isRecording, 
+        hasSession: !!currentSession,
+        wasRecording,
+        hadSession
+      });
       
-      // If we're recording but have a session, re-setup listeners
-      if (isRecording && currentSession) {
+      // If we're recording and have a session, and we weren't already set up, re-setup listeners
+      if (isRecording && currentSession && (!wasRecording || !hadSession)) {
+        console.log('Setting up recording listeners after state recovery');
         setupRecordingListeners();
         startAutosave();
       }
