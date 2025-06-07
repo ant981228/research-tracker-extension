@@ -182,6 +182,7 @@ Use one of these standard content types:
 - `social-media-post` - Social media content
 - `website` - Generic website
 - `academic-article` - Generic academic content
+- `legal-document` - Legal documents, court cases, statutes
 
 ## Testing Your Extractor
 

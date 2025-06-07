@@ -291,6 +291,9 @@ The extension includes specialized metadata extractors for the following domains
 - RAND Corporation - Document numbers, report metadata
 - Pew Research - Research categories, topics
 
+**Legal Research:**
+- LexisNexis (advance.lexis.com, lexis.com, lexisnexis.com) - Document title, source publication, author/byline, publish date, content type classification
+
 **Other:**
 - Wikipedia - Categories, language, last modified date, permanent URLs
 

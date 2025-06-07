@@ -161,7 +161,13 @@ const SITE_SPECIFIC_EXTRACTORS = {
   
   // News sites (additional)
   'news.mongabay.com': extractMongabayMetadata,
-  'highnorthnews.com': extractHighNorthNewsMetadata
+  'highnorthnews.com': extractHighNorthNewsMetadata,
+  
+  // Legal research
+  'advance.lexis.com': extractLexisNexisMetadata,
+  'www.lexis.com': extractLexisNexisMetadata,
+  'lexisnexis.com': extractLexisNexisMetadata,
+  'www.lexisnexis.com': extractLexisNexisMetadata
 };
 
 // Citation preview functionality
@@ -3254,6 +3260,117 @@ function extractHighNorthNewsMetadata() {
     
   } catch (e) {
     console.error('Error in High North News extractor:', e);
+  }
+  
+  return metadata;
+}
+
+// LexisNexis extractor
+function extractLexisNexisMetadata() {
+  const metadata = {};
+  
+  try {
+    // Skip if this is a search page
+    if (window.location.href.includes('/search/')) {
+      return metadata;
+    }
+    
+    // Extract title from <title> tag with special processing
+    const titleElement = document.querySelector('title');
+    if (titleElement && titleElement.textContent) {
+      let titleText = titleElement.textContent.trim();
+      
+      // Remove everything before and including the first colon
+      const colonIndex = titleText.indexOf(':');
+      if (colonIndex !== -1) {
+        titleText = titleText.substring(colonIndex + 1).trim();
+      }
+      
+      // Extract journal from text after last comma
+      const lastCommaIndex = titleText.lastIndexOf(',');
+      if (lastCommaIndex !== -1) {
+        // Journal is everything after the last comma
+        metadata.journal = titleText.substring(lastCommaIndex + 1).trim();
+        // Title is everything before the last comma
+        metadata.title = titleText.substring(0, lastCommaIndex).trim();
+      } else {
+        // No comma found, use the whole processed title
+        metadata.title = titleText;
+      }
+    }
+    
+    // Extract date from SS_DocumentInfo
+    const dateEl = document.querySelector('p.SS_DocumentInfo');
+    if (dateEl && dateEl.textContent) {
+      metadata.publishDate = dateEl.textContent.trim();
+    }
+    
+    // Extract author - search for "Author:" text anywhere on the page
+    const bodyText = document.body.innerText || document.body.textContent || '';
+    const lines = bodyText.split('\n');
+    
+    for (const line of lines) {
+      if (line.includes('Author:')) {
+        // Extract everything after "Author:" on this line
+        const authorMatch = line.match(/Author:\s*(.+?)$/i);
+        if (authorMatch && authorMatch[1]) {
+          let authorText = authorMatch[1].trim();
+          
+          // Clean up - remove any trailing field labels that might be on the same line
+          authorText = authorText.replace(/\s*(Date:|Publisher:|Source:|Copyright:|Section:).*/i, '').trim();
+          
+          if (authorText && authorText.length > 0) {
+            metadata.author = authorText;
+            break;
+          }
+        }
+      }
+    }
+    
+    // Fallback author extraction if the above didn't work
+    if (!metadata.author) {
+      const authorSelectors = [
+        '.byline',
+        '.doc-byline',
+        '.author',
+        '.SS_AuthorInfo',
+        '[data-byline]'
+      ];
+      
+      for (const selector of authorSelectors) {
+        const authorEl = document.querySelector(selector);
+        if (authorEl && authorEl.textContent.trim()) {
+          let authorText = authorEl.textContent.trim();
+          // Clean up common prefixes
+          authorText = authorText.replace(/^By\s+/i, '');
+          authorText = authorText.replace(/^Author:\s+/i, '');
+          if (authorText) {
+            metadata.author = authorText;
+            break;
+          }
+        }
+      }
+    }
+    
+    // Always set publisher to "Lexis" regardless of what we found
+    metadata.publisher = 'Lexis';
+    
+    // Set content type based on what we found in the title/publisher
+    if (metadata.title) {
+      const titleLower = metadata.title.toLowerCase();
+      if (titleLower.includes('law') || titleLower.includes('legal') || titleLower.includes('court') || titleLower.includes('harv. j.') || titleLower.includes('yale l.j.')) {
+        metadata.contentType = 'legal-document';
+      } else if (titleLower.includes('news') || titleLower.includes('times') || titleLower.includes('post')) {
+        metadata.contentType = 'news-article';
+      } else {
+        metadata.contentType = 'report';
+      }
+    } else {
+      metadata.contentType = 'document';
+    }
+    
+  } catch (e) {
+    console.error('Error in LexisNexis extractor:', e);
   }
   
   return metadata;
