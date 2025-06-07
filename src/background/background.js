@@ -1002,17 +1002,17 @@ function handleTabUpdated(tabId, changeInfo, tab) {
   const isSearchEngine = checkForSearch(tab);
   
   // Check if this is a new tab page or other browser page that shouldn't be logged
-  const isExcludedPage = isExcludedFromLogging(tab.url);
-  
-  // Only log as a page visit if it's not a search engine and not an excluded page
-  if (!isSearchEngine && !isExcludedPage) {
-    logPageVisit({
-      url: tab.url,
-      title: tab.title || '',
-      timestamp: new Date().toISOString(),
-      tabId: tabId
-    });
-  }
+  isExcludedFromLoggingAsync(tab.url).then(isExcludedPage => {
+    // Only log as a page visit if it's not a search engine and not an excluded page
+    if (!isSearchEngine && !isExcludedPage) {
+      logPageVisit({
+        url: tab.url,
+        title: tab.title || '',
+        timestamp: new Date().toISOString(),
+        tabId: tabId
+      });
+    }
+  });
 }
 
 function handleNavigationCompleted(details) {
@@ -1031,17 +1031,17 @@ function handleNavigationCompleted(details) {
     const isSearchEngine = checkForSearch(tab);
     
     // Check if this is an excluded page
-    const isExcludedPage = isExcludedFromLogging(tab.url);
-    
-    // Only extract and update metadata for non-search pages and non-excluded pages
-    if (!isSearchEngine && !isExcludedPage) {
-      chrome.tabs.sendMessage(details.tabId, { action: 'extractMetadata' }, (response) => {
-        if (chrome.runtime.lastError || !response) return;
-        
-        // Update page visit with metadata
-        updatePageVisitMetadata(details.url, response.metadata);
-      });
-    }
+    isExcludedFromLoggingAsync(tab.url).then(isExcludedPage => {
+      // Only extract and update metadata for non-search pages and non-excluded pages
+      if (!isSearchEngine && !isExcludedPage) {
+        chrome.tabs.sendMessage(details.tabId, { action: 'extractMetadata' }, (response) => {
+          if (chrome.runtime.lastError || !response) return;
+          
+          // Update page visit with metadata
+          updatePageVisitMetadata(details.url, response.metadata);
+        });
+      }
+    });
   });
 }
 
@@ -1093,11 +1093,70 @@ function isExcludedFromLogging(url) {
       return true;
     }
     
+    // Check custom excluded domains (async - will be handled separately)
     return false;
   } catch (e) {
     console.error('Error checking excluded URL:', e);
     return true; // If there's an error, exclude it to be safe
   }
+}
+
+// Async version that checks custom domains from settings
+function isExcludedFromLoggingAsync(url) {
+  return new Promise((resolve) => {
+    // First check the synchronous exclusions
+    if (isExcludedFromLogging(url)) {
+      resolve(true);
+      return;
+    }
+    
+    // Then check custom domains from settings
+    chrome.storage.local.get(['citationSettings'], (result) => {
+      try {
+        const settings = result.citationSettings || {};
+        const excludedDomains = settings.excludedDomains || 'annas-archive.org, libgen.is, sci-hub.se, library.dartmouth.edu';
+        
+        if (!excludedDomains.trim()) {
+          resolve(false);
+          return;
+        }
+        
+        // Parse the comma-separated domains
+        const domains = excludedDomains.split(',').map(d => d.trim()).filter(d => d);
+        
+        if (domains.length === 0) {
+          resolve(false);
+          return;
+        }
+        
+        // Extract hostname from URL
+        const urlObj = new URL(url);
+        const hostname = urlObj.hostname.toLowerCase();
+        
+        // Check if hostname matches any excluded domain
+        for (const domain of domains) {
+          const cleanDomain = domain.toLowerCase();
+          
+          // Exact match
+          if (hostname === cleanDomain) {
+            resolve(true);
+            return;
+          }
+          
+          // Subdomain match (e.g., "example.com" matches "www.example.com")
+          if (hostname.endsWith('.' + cleanDomain)) {
+            resolve(true);
+            return;
+          }
+        }
+        
+        resolve(false);
+      } catch (e) {
+        console.error('Error checking custom excluded domains:', e);
+        resolve(false); // Don't exclude on error for custom domains
+      }
+    });
+  });
 }
 
 function isProxiedDomain(hostname, targetDomains) {

@@ -66,6 +66,7 @@ let citationFormatSelect;
 let customFormatSection;
 let customFormatTemplate;
 let citationPreviewEnabled;
+let excludedDomainsInput;
 let saveSettingsBtn;
 let cancelSettingsBtn;
 
@@ -84,7 +85,12 @@ let isRecording = false;
 let isPaused = false;
 let currentSession = null;
 let currentUrl = null;
-let citationSettings = { format: 'apa', customTemplate: '', previewEnabled: false };
+let citationSettings = { 
+  format: 'apa', 
+  customTemplate: '', 
+  previewEnabled: false, 
+  excludedDomains: 'annas-archive.org, libgen.is, sci-hub.se, library.dartmouth.edu' 
+};
 
 // Modal management system
 let modalStack = [];
@@ -236,6 +242,7 @@ function init() {
   customFormatSection = document.getElementById('custom-format-section');
   customFormatTemplate = document.getElementById('custom-format-template');
   citationPreviewEnabled = document.getElementById('citation-preview-enabled');
+  excludedDomainsInput = document.getElementById('excluded-domains');
   saveSettingsBtn = document.getElementById('save-settings-btn');
   cancelSettingsBtn = document.getElementById('cancel-settings-btn');
   
@@ -1821,16 +1828,26 @@ async function copyCitation(url, title, buttonElement) {
 function loadCitationSettings() {
   chrome.storage.local.get(['citationSettings'], (result) => {
     if (result.citationSettings) {
-      citationSettings = result.citationSettings;
-      citationFormatSelect.value = citationSettings.format;
-      customFormatTemplate.value = citationSettings.customTemplate || '';
-      citationPreviewEnabled.checked = citationSettings.previewEnabled || false;
-      
-      if (citationSettings.format === 'custom') {
-        customFormatSection.style.display = 'block';
-      } else {
-        customFormatSection.style.display = 'none';
-      }
+      // Merge saved settings with defaults to ensure new properties exist
+      citationSettings = {
+        format: 'apa',
+        customTemplate: '',
+        previewEnabled: false,
+        excludedDomains: 'annas-archive.org, libgen.is, sci-hub.se, library.dartmouth.edu',
+        ...result.citationSettings
+      };
+    }
+    // If no saved settings, citationSettings already has the defaults
+    
+    citationFormatSelect.value = citationSettings.format;
+    customFormatTemplate.value = citationSettings.customTemplate || '';
+    citationPreviewEnabled.checked = citationSettings.previewEnabled || false;
+    excludedDomainsInput.value = citationSettings.excludedDomains || 'annas-archive.org, libgen.is, sci-hub.se, library.dartmouth.edu';
+    
+    if (citationSettings.format === 'custom') {
+      customFormatSection.style.display = 'block';
+    } else {
+      customFormatSection.style.display = 'none';
     }
   });
 }
@@ -1839,6 +1856,7 @@ function saveCitationSettings() {
   citationSettings.format = citationFormatSelect.value;
   citationSettings.customTemplate = customFormatTemplate.value;
   citationSettings.previewEnabled = citationPreviewEnabled.checked;
+  citationSettings.excludedDomains = excludedDomainsInput.value;
   
   chrome.storage.local.set({ citationSettings }, () => {
     console.log('Citation settings saved');
