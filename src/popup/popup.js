@@ -810,39 +810,54 @@ function openNoteModal() {
     return;
   }
   
-  // Check if a title was already set by selectUrl() (e.g., for searches)
-  const currentNoteTarget = noteTargetEl.textContent;
-  const hasExistingTitle = currentNoteTarget && currentNoteTarget !== 'Selected Page' && currentNoteTarget !== 'Current Page';
+  // Clear previous note text first
+  noteInput.value = '';
   
-  if (hasExistingTitle) {
-    // Title was already set by selectUrl(), keep it and show the modal
-    showModal(noteModal, 'note');
-    noteInput.focus();
-  } else {
-    // No title set yet, get one from metadata/tab
-    const targetUrl = selectedPageUrl || currentUrl;
+  const targetUrl = selectedPageUrl || currentUrl;
+  
+  // Get existing note for this URL if any
+  chrome.runtime.sendMessage({
+    action: 'getExistingNote',
+    url: targetUrl
+  }, (noteResponse) => {
+    // Set the existing note text if found
+    if (noteResponse && noteResponse.success && noteResponse.note) {
+      noteInput.value = noteResponse.note;
+    }
     
-    // Get metadata if available to get the best title
-    chrome.runtime.sendMessage({
-      action: 'getPageMetadata',
-      url: targetUrl
-    }, (response) => {
-      chrome.tabs.query({ active: true, currentWindow: true }, tabs => {
-        const tab = tabs[0];
-        const metadata = (response && response.success && response.metadata) ? response.metadata : {};
-        const pageTitle = metadata.title || (tab ? tab.title : 'Selected Page') || 'Selected Page';
-        
-        // Set the note target only if we don't have an existing title
-        noteTargetEl.textContent = pageTitle;
-        
-        // Display the modal using our modal management system
-        showModal(noteModal, 'note');
-        
-        // Focus the note input
-        noteInput.focus();
+    // Check if a title was already set by selectUrl() (e.g., for searches)
+    const currentNoteTarget = noteTargetEl.textContent;
+    const hasExistingTitle = currentNoteTarget && currentNoteTarget !== 'Selected Page' && currentNoteTarget !== 'Current Page';
+    
+    if (hasExistingTitle) {
+      // Title was already set by selectUrl(), keep it and show the modal
+      showModal(noteModal, 'note');
+      noteInput.focus();
+    } else {
+      // No title set yet, get one from metadata/tab
+      
+      // Get metadata if available to get the best title
+      chrome.runtime.sendMessage({
+        action: 'getPageMetadata',
+        url: targetUrl
+      }, (response) => {
+        chrome.tabs.query({ active: true, currentWindow: true }, tabs => {
+          const tab = tabs[0];
+          const metadata = (response && response.success && response.metadata) ? response.metadata : {};
+          const pageTitle = metadata.title || (tab ? tab.title : 'Selected Page') || 'Selected Page';
+          
+          // Set the note target only if we don't have an existing title
+          noteTargetEl.textContent = pageTitle;
+          
+          // Display the modal using our modal management system
+          showModal(noteModal, 'note');
+          
+          // Focus the note input
+          noteInput.focus();
+        });
       });
-    });
-  }
+    }
+  });
 }
 
 function closeNoteModal() {

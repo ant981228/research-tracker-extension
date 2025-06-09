@@ -399,6 +399,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       }
       break;
     
+    case 'getExistingNote':
+      if (message.url) {
+        const existingNote = getExistingNoteForUrl(message.url);
+        sendResponse({ success: true, note: existingNote });
+      } else {
+        sendResponse({ success: false, error: 'No URL provided' });
+      }
+      break;
+    
     case 'exportSession':
       if (message.sessionId) {
         exportSession(message.sessionId, message.format || 'json')
@@ -1644,6 +1653,41 @@ function getPageMetadataForUrl(url) {
   return {};
 }
 
+function getExistingNoteForUrl(url) {
+  if (!currentSession) return null;
+  
+  // Check searches first
+  for (let i = currentSession.searches.length - 1; i >= 0; i--) {
+    const search = currentSession.searches[i];
+    if (search.url === url && search.notes && search.notes.length > 0) {
+      // Return the most recent note
+      return search.notes[search.notes.length - 1].content;
+    }
+  }
+  
+  // Check page visits
+  for (let i = currentSession.pageVisits.length - 1; i >= 0; i--) {
+    const visit = currentSession.pageVisits[i];
+    if (visit.url === url && visit.notes && visit.notes.length > 0) {
+      // Return the most recent note
+      return visit.notes[visit.notes.length - 1].content;
+    }
+  }
+  
+  // Also check in the general pages array
+  if (currentSession.pages) {
+    for (let i = currentSession.pages.length - 1; i >= 0; i--) {
+      const page = currentSession.pages[i];
+      if (page.url === url && page.notes && page.notes.length > 0) {
+        // Return the most recent note
+        return page.notes[page.notes.length - 1].content;
+      }
+    }
+  }
+  
+  return null;
+}
+
 function addNote(url, note) {
   if (!currentSession) return;
   
@@ -1671,8 +1715,8 @@ function addNote(url, note) {
         search.notes = [];
       }
       
-      // Add note to the search
-      search.notes.push(noteObj);
+      // Replace existing note or add new one (only one note per item)
+      search.notes = [noteObj];
       
       // Also update in events array - find the search event
       for (let j = currentSession.events.length - 1; j >= 0; j--) {
@@ -1681,12 +1725,12 @@ function addNote(url, note) {
           if (!event.notes) {
             event.notes = [];
           }
-          event.notes.push(noteObj);
+          event.notes = [noteObj];
           
           // Add a note_added property to the event to indicate it has notes
           event.has_notes = true;
           
-          console.log(`Added note to search: ${search.query}`);
+          console.log(`Updated note for search: ${search.query}`);
           break;
         }
       }
@@ -1707,8 +1751,8 @@ function addNote(url, note) {
           visit.notes = [];
         }
         
-        // Add note to the page visit
-        visit.notes.push(noteObj);
+        // Replace existing note or add new one (only one note per item)
+        visit.notes = [noteObj];
         
         // Also update in events array - find the page visit event
         for (let j = currentSession.events.length - 1; j >= 0; j--) {
@@ -1717,12 +1761,12 @@ function addNote(url, note) {
             if (!event.notes) {
               event.notes = [];
             }
-            event.notes.push(noteObj);
+            event.notes = [noteObj];
             
             // Add a note_added property to the event to indicate it has notes
             event.has_notes = true;
             
-            console.log(`Added note to page visit: ${visit.title}`);
+            console.log(`Updated note for page visit: ${visit.title}`);
             break;
           }
         }
