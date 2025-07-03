@@ -160,31 +160,43 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       
     case 'updatePageMetadata':
       console.log('Received updatePageMetadata message:', message);
-      try {
-        if (message.url && message.metadata) {
-          if (isRecording && currentSession) {
-            // Update in the session
-            const result = updatePageVisitMetadata(message.url, message.metadata);
-            console.log('Metadata update complete, result:', result);
-            sendResponse({ success: true });
+      (async () => {
+        try {
+          if (message.url && message.metadata) {
+            // Check if this is a manual update (from popup) vs automatic
+            const isManualUpdate = message.isManualUpdate || false;
+            
+            let metadataToUpdate = message.metadata;
+            
+            // Only enhance with DOI if not a manual update and not already from DOI
+            if (!isManualUpdate && !message.metadata.doiMetadata) {
+              metadataToUpdate = await enhanceMetadataWithDOI(message.url, message.metadata);
+            }
+            
+            if (isRecording && currentSession) {
+              // Update in the session
+              const result = updatePageVisitMetadata(message.url, metadataToUpdate);
+              console.log('Metadata update complete, result:', result);
+              sendResponse({ success: true });
+            } else {
+              // Store temporarily when not recording
+              tempMetadata[message.url] = {
+                ...tempMetadata[message.url],
+                ...metadataToUpdate,
+                lastUpdated: new Date().toISOString()
+              };
+              console.log('Metadata stored temporarily for:', message.url);
+              sendResponse({ success: true });
+            }
           } else {
-            // Store temporarily when not recording
-            tempMetadata[message.url] = {
-              ...tempMetadata[message.url],
-              ...message.metadata,
-              lastUpdated: new Date().toISOString()
-            };
-            console.log('Metadata stored temporarily for:', message.url);
-            sendResponse({ success: true });
+            console.warn('Cannot update metadata: missing URL or metadata');
+            sendResponse({ success: false, error: 'Missing URL or metadata' });
           }
-        } else {
-          console.warn('Cannot update metadata: missing URL or metadata');
-          sendResponse({ success: false, error: 'Missing URL or metadata' });
+        } catch (e) {
+          console.error('Error updating metadata:', e);
+          sendResponse({ success: false, error: 'Exception: ' + e.message });
         }
-      } catch (e) {
-        console.error('Error updating metadata:', e);
-        sendResponse({ success: false, error: 'Exception: ' + e.message });
-      }
+      })();
       return true; // Keep the message channel open for async response
       break;
       
@@ -777,6 +789,31 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         });
       });
       return true; // Indicates async response
+      
+    case 'fetchDOIMetadata':
+      console.log('Received fetchDOIMetadata message:', message);
+      (async () => {
+        try {
+          if (!message.doi) {
+            sendResponse({ success: false, error: 'Missing DOI' });
+            return;
+          }
+
+          // Fetch metadata using our existing function
+          const metadata = await fetchDOIMetadata(message.doi);
+          
+          if (metadata) {
+            sendResponse({ success: true, metadata });
+          } else {
+            sendResponse({ success: false, error: 'Failed to fetch metadata for this DOI' });
+          }
+        } catch (e) {
+          console.error('Error in fetchDOIMetadata:', e);
+          sendResponse({ success: false, error: e.message });
+        }
+      })();
+      return true; // Keep the message channel open for async response
+      break;
   }
 });
 
@@ -1153,11 +1190,14 @@ function handleNavigationCompleted(details) {
     isExcludedFromLoggingAsync(tab.url).then(isExcludedPage => {
       // Only extract and update metadata for non-search pages and non-excluded pages
       if (!isSearchEngine && !isExcludedPage) {
-        chrome.tabs.sendMessage(details.tabId, { action: 'extractMetadata' }, (response) => {
+        chrome.tabs.sendMessage(details.tabId, { action: 'extractMetadata' }, async (response) => {
           if (chrome.runtime.lastError || !response) return;
           
-          // Update page visit with metadata
-          updatePageVisitMetadata(details.url, response.metadata);
+          // Enhance metadata with DOI if available
+          const enhancedMetadata = await enhanceMetadataWithDOI(details.url, response.metadata);
+          
+          // Update page visit with enhanced metadata
+          updatePageVisitMetadata(details.url, enhancedMetadata);
         });
       }
     });
@@ -1614,6 +1654,216 @@ function updatePageVisitMetadata(url, metadata) {
   });
   
   return true; // Indicate success
+}
+
+// DOI detection and metadata fetching
+function extractDOIFromURL(url) {
+  try {
+    // Common DOI patterns in URLs
+    const patterns = [
+      // doi.org URLs (including dx.doi.org)
+      /(?:dx\.)?doi\.org\/(10\.\d{4,}(?:\.\d+)*\/[^\s?#]+)/i,
+      
+      // URLs with doi parameter
+      /[?&]doi=(10\.\d{4,}[^&\s]+)/i,
+      
+      // Wiley Online Library
+      /\/doi\/(?:abs|full|pdf|epdf)\/(10\.\d{4,}\/[^\s?#]+)/i,
+      
+      // Springer
+      /\/article\/(10\.\d{4,}\/[^\s?#]+)/i,
+      
+      // PLOS journals
+      /\/article\?id=(10\.\d{4,}\/[^&\s]+)/i,
+      
+      // JSTOR
+      /stable\/(10\.\d{4,}\/[^\s?#]+)/i,
+      
+      // IEEE Xplore
+      /\/document\/\d+.*[?&]arnumber=\d+/i, // Note: IEEE uses different system
+      
+      // Generic DOI in path (must be last as it's most general)
+      /\/(10\.\d{4,}(?:\.\d+)*\/[-._;()\/:A-Za-z0-9]+)/
+    ];
+
+    for (const pattern of patterns) {
+      const match = url.match(pattern);
+      if (match) {
+        // Clean up the DOI
+        let doi = match[1];
+        // URL decode if needed
+        doi = decodeURIComponent(doi);
+        // Remove any trailing slashes or query params
+        doi = doi.replace(/[\/?#].*$/, '');
+        return doi;
+      }
+    }
+  } catch (e) {
+    console.error('Error extracting DOI from URL:', e);
+  }
+  return null;
+}
+
+async function fetchDOIMetadata(doi) {
+  try {
+    console.log('Fetching metadata for DOI:', doi);
+    
+    // Use doi.org (not dx.doi.org) and request CSL JSON with fallback options
+    const response = await fetch(`https://doi.org/${doi}`, {
+      headers: {
+        'Accept': 'application/vnd.citationstyles.csl+json;q=1.0, application/x-bibtex;q=0.5',
+        'User-Agent': 'Research-Tracker-Extension/1.0'
+      },
+      redirect: 'follow' // Explicitly follow redirects
+    });
+
+    // Handle specific error cases
+    if (response.status === 404) {
+      console.error('DOI not found:', doi);
+      return null;
+    }
+    
+    if (response.status === 204) {
+      console.error('No metadata available for DOI:', doi);
+      return null;
+    }
+    
+    if (response.status === 406) {
+      console.error('Content type not acceptable for DOI:', doi);
+      return null;
+    }
+
+    if (!response.ok) {
+      console.error('DOI fetch failed:', response.status, response.statusText);
+      return null;
+    }
+
+    // Check content type to ensure we got JSON
+    const contentType = response.headers.get('content-type');
+    if (!contentType || !contentType.includes('json')) {
+      console.error('Unexpected content type:', contentType);
+      return null;
+    }
+
+    const data = await response.json();
+    console.log('DOI metadata received:', data);
+
+    // Convert CSL JSON to our metadata format
+    const metadata = {
+      doi: doi,
+      doiMetadata: true, // Flag to indicate this came from DOI API
+      title: data.title,
+      authors: [],
+      publishDate: null,
+      journal: data['container-title'],
+      volume: data.volume,
+      issue: data.issue,
+      pages: data.page,
+      publisher: data.publisher,
+      abstract: data.abstract,
+      contentType: mapCSLTypeToContentType(data.type)
+    };
+
+    // Process authors
+    if (data.author && Array.isArray(data.author)) {
+      metadata.authors = data.author.map(author => {
+        if (author.given && author.family) {
+          return `${author.given} ${author.family}`;
+        } else if (author.name) {
+          return author.name;
+        } else if (author.family) {
+          return author.family;
+        }
+        return '';
+      }).filter(name => name);
+      
+      metadata.author = metadata.authors.join(', ');
+    }
+
+    // Process publication date
+    if (data.published && data.published['date-parts']) {
+      const dateParts = data.published['date-parts'][0];
+      if (dateParts && dateParts.length > 0) {
+        const year = dateParts[0];
+        const month = dateParts[1] || 1;
+        const day = dateParts[2] || 1;
+        metadata.publishDate = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+      }
+    } else if (data.issued && data.issued['date-parts']) {
+      const dateParts = data.issued['date-parts'][0];
+      if (dateParts && dateParts.length > 0) {
+        const year = dateParts[0];
+        const month = dateParts[1] || 1;
+        const day = dateParts[2] || 1;
+        metadata.publishDate = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+      }
+    }
+
+    // Add URL if available
+    if (data.URL) {
+      metadata.doiUrl = data.URL;
+    }
+
+    return metadata;
+  } catch (e) {
+    console.error('Error fetching DOI metadata:', e);
+    return null;
+  }
+}
+
+function mapCSLTypeToContentType(cslType) {
+  const mapping = {
+    'article-journal': 'journal-article',
+    'article-magazine': 'magazine-article',
+    'article-newspaper': 'newspaper-article',
+    'book': 'book',
+    'chapter': 'book-chapter',
+    'paper-conference': 'conference-paper',
+    'report': 'report',
+    'thesis': 'thesis',
+    'webpage': 'website',
+    'post-weblog': 'blog-post'
+  };
+  
+  return mapping[cslType] || 'academic-article';
+}
+
+async function enhanceMetadataWithDOI(url, metadata) {
+  try {
+    // First check if metadata already has a DOI
+    let doi = metadata.doi;
+    
+    // If not, try to extract from URL
+    if (!doi) {
+      doi = extractDOIFromURL(url);
+    }
+    
+    if (!doi) {
+      return metadata; // No DOI found
+    }
+
+    // Fetch DOI metadata
+    const doiMetadata = await fetchDOIMetadata(doi);
+    
+    if (!doiMetadata) {
+      return metadata; // Failed to fetch
+    }
+
+    // Merge metadata with DOI data taking precedence
+    const enhancedMetadata = {
+      ...metadata,
+      ...doiMetadata,
+      // Preserve some original metadata that might be more specific
+      url: metadata.url || url,
+      timestamp: metadata.timestamp
+    };
+
+    console.log('Enhanced metadata with DOI:', enhancedMetadata);
+    return enhancedMetadata;
+  } catch (e) {
+    console.error('Error enhancing metadata with DOI:', e);
+    return metadata;
+  }
 }
 
 function getPageMetadataForUrl(url) {

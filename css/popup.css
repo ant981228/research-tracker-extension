@@ -723,3 +723,49 @@ h3 {
 #cancel-metadata-btn:hover, #cancel-note-btn:hover, #close-pages-btn:hover, #close-searches-btn:hover {
   background-color: #7f8c8d;
 }
+
+/* Specific adjustments for metadata modal to fix button cutoff */
+#metadata-modal .metadata-form-grid {
+  gap: 6px; /* Reduced from 8px */
+  margin-bottom: 8px; /* Reduced from 12px */
+}
+
+#metadata-modal .form-group {
+  margin-bottom: 6px; /* Reduced from 8px */
+}
+
+#metadata-modal .modal-buttons {
+  margin-top: 8px; /* Reduced from 12px */
+}
+
+/* Make metadata modal buttons taller and properly center text */
+#metadata-modal .modal-buttons button {
+  height: 36px !important; /* Increased from 32px */
+  padding: 0 12px; /* Remove vertical padding, let flexbox handle centering */
+  line-height: 1; /* Reset line height */
+  display: flex !important; /* Use flexbox for centering */
+  align-items: center; /* Vertically center text */
+  justify-content: center; /* Horizontally center text */
+}
+
+/* Also apply to the DOI modal buttons */
+#doi-input-modal .modal-buttons button {
+  height: 36px !important;
+  padding: 0 12px; /* Remove vertical padding, let flexbox handle centering */
+  line-height: 1; /* Reset line height */
+  display: flex !important; /* Use flexbox for centering */
+  align-items: center; /* Vertically center text */
+  justify-content: center; /* Horizontally center text */
+}
+
+/* Add missing close button style for DOI modal */
+.close-doi-modal {
+  float: right;
+  font-size: 20px;
+  cursor: pointer;
+  color: #aaa;
+}
+
+.close-doi-modal:hover {
+  color: #555;
+}

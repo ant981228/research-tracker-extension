@@ -39,6 +39,14 @@ let metadataInfo;
 let saveMetadataBtn;
 let cancelMetadataBtn;
 let closeMetadataBtn;
+let fillFromDoiBtn;
+
+// DOI Input Modal Elements
+let doiInputModal;
+let doiInput;
+let fetchDoiBtn;
+let cancelDoiBtn;
+let closeDoiModalBtn;
 
 // Note Modal Elements
 let noteModal;
@@ -122,6 +130,10 @@ function showModal(modal, type) {
     modalStack.push('help');
     helpModal.classList.add('hidden');
     helpModal.style.display = 'none';
+  } else if (doiInputModal && doiInputModal.style.display === 'flex') {
+    modalStack.push('doi-input');
+    doiInputModal.classList.add('hidden');
+    doiInputModal.style.display = 'none';
   }
   
   // Show the new modal
@@ -150,6 +162,9 @@ function hideCurrentModal() {
   } else if (helpModal && helpModal.style.display === 'flex') {
     helpModal.classList.add('hidden');
     helpModal.style.display = 'none';
+  } else if (doiInputModal && doiInputModal.style.display === 'flex') {
+    doiInputModal.classList.add('hidden');
+    doiInputModal.style.display = 'none';
   }
   
   // If there's a previous modal in the stack, show it
@@ -174,6 +189,9 @@ function hideCurrentModal() {
     } else if (previousModal === 'help') {
       helpModal.classList.remove('hidden');
       helpModal.style.display = 'flex';
+    } else if (previousModal === 'doi-input') {
+      doiInputModal.classList.remove('hidden');
+      doiInputModal.style.display = 'flex';
     }
   }
   
@@ -217,6 +235,14 @@ function init() {
   saveMetadataBtn = document.getElementById('save-metadata-btn');
   cancelMetadataBtn = document.getElementById('cancel-metadata-btn');
   closeMetadataBtn = document.querySelector('.close-modal');
+  fillFromDoiBtn = document.getElementById('fill-from-doi-btn');
+  
+  // Initialize DOI input modal elements
+  doiInputModal = document.getElementById('doi-input-modal');
+  doiInput = document.getElementById('doi-input');
+  fetchDoiBtn = document.getElementById('fetch-doi-btn');
+  cancelDoiBtn = document.getElementById('cancel-doi-btn');
+  closeDoiModalBtn = document.querySelector('.close-doi-modal');
   
   // Initialize note modal elements
   noteModal = document.getElementById('note-modal');
@@ -297,6 +323,12 @@ function init() {
   saveMetadataBtn.addEventListener('click', saveMetadata);
   cancelMetadataBtn.addEventListener('click', closeMetadataModal);
   closeMetadataBtn.addEventListener('click', closeMetadataModal);
+  fillFromDoiBtn.addEventListener('click', openDoiInputModal);
+  
+  // DOI input modal event listeners
+  fetchDoiBtn.addEventListener('click', fetchFromDoi);
+  cancelDoiBtn.addEventListener('click', closeDoiInputModal);
+  closeDoiModalBtn.addEventListener('click', closeDoiInputModal);
   
   // Note modal event listeners
   saveNoteBtn.addEventListener('click', saveNote);
@@ -1422,7 +1454,8 @@ function saveMetadata() {
     chrome.runtime.sendMessage({
       action: 'updatePageMetadata',
       url: selectedPageUrl,
-      metadata
+      metadata,
+      isManualUpdate: true // Flag to prevent DOI override
     }, (response) => {
       // Check for runtime errors (connection issues)
       if (chrome.runtime.lastError) {
@@ -1497,6 +1530,104 @@ function saveMetadata() {
     console.error('Exception in saveMetadata:', e);
     closeMetadataModal();
     alert('Error: ' + e.message);
+  }
+}
+
+// DOI Input Modal Functions
+function openDoiInputModal() {
+  showModal(doiInputModal, 'doi-input');
+  doiInput.value = ''; // Clear previous input
+  doiInput.focus();
+  
+  // Remove any existing keypress listeners to avoid duplicates
+  doiInput.removeEventListener('keypress', handleDoiInputKeypress);
+  // Allow Enter key to trigger fetch
+  doiInput.addEventListener('keypress', handleDoiInputKeypress);
+}
+
+function handleDoiInputKeypress(e) {
+  if (e.key === 'Enter') {
+    fetchFromDoi();
+  }
+}
+
+function closeDoiInputModal() {
+  hideCurrentModal();
+}
+
+async function fetchFromDoi() {
+  const doi = doiInput.value.trim();
+  
+  if (!doi) {
+    alert('Please enter a DOI');
+    return;
+  }
+  
+  // Validate DOI format (basic check)
+  if (!doi.match(/^10\.\d{4,}(?:\.\d+)*\/[^\s]+/)) {
+    alert('Please enter a valid DOI (e.g., 10.1038/nature12373)');
+    return;
+  }
+  
+  // Disable button and show loading state
+  fetchDoiBtn.disabled = true;
+  fetchDoiBtn.textContent = 'Fetching...';
+  
+  try {
+    // Send message to background script to fetch DOI metadata
+    chrome.runtime.sendMessage({
+      action: 'fetchDOIMetadata',
+      doi: doi
+    }, (response) => {
+      // Reset button state
+      fetchDoiBtn.disabled = false;
+      fetchDoiBtn.textContent = 'Fetch Metadata';
+      
+      if (chrome.runtime.lastError) {
+        console.error('Error fetching DOI metadata:', chrome.runtime.lastError);
+        alert('Error communicating with background script');
+        return;
+      }
+      
+      if (response && response.success && response.metadata) {
+        // Fill the metadata form with the fetched data
+        fillMetadataForm(response.metadata);
+        
+        // Close the DOI input modal and return to metadata modal
+        closeDoiInputModal();
+        
+        // Show success message
+        alert('Metadata fetched successfully from DOI!');
+      } else {
+        // On error, stay in the DOI modal so user can try again
+        const errorMsg = response?.error || 'Failed to fetch metadata for this DOI';
+        alert('Error: ' + errorMsg);
+        // DOI modal remains open for user to correct input or try again
+      }
+    });
+  } catch (e) {
+    fetchDoiBtn.disabled = false;
+    fetchDoiBtn.textContent = 'Fetch Metadata';
+    console.error('Exception in fetchFromDoi:', e);
+    alert('Error: ' + e.message);
+    // DOI modal remains open for user to try again
+  }
+}
+
+function fillMetadataForm(metadata) {
+  // Fill the form fields with the fetched metadata
+  if (metadata.title) metadataTitle.value = metadata.title;
+  if (metadata.author) metadataAuthor.value = metadata.author;
+  if (metadata.publishDate) metadataDate.value = metadata.publishDate;
+  if (metadata.publisher) metadataPublisher.value = metadata.publisher;
+  if (metadata.journal) metadataJournal.value = metadata.journal;
+  if (metadata.doi) metadataDoi.value = metadata.doi;
+  if (metadata.contentType) metadataType.value = metadata.contentType;
+  if (metadata.abstract) metadataQuals.value = metadata.abstract;
+  
+  // Add info about DOI source
+  if (metadataInfo) {
+    metadataInfo.innerHTML = '<div class="metadata-source-info" style="color: #2e7d32; font-size: 0.9em; margin-top: 10px;">✓ Metadata fetched from DOI registry</div>';
   }
 }
 

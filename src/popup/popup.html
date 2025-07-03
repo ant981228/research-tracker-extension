@@ -130,7 +130,29 @@
           
           <div class="modal-buttons">
             <button id="save-metadata-btn" class="action-btn">Save Metadata</button>
+            <button id="fill-from-doi-btn" class="action-btn secondary-btn">Fill from DOI</button>
             <button id="cancel-metadata-btn" class="action-btn secondary-btn">Cancel</button>
+          </div>
+        </div>
+      </div>
+      
+      <!-- DOI Input Modal -->
+      <div id="doi-input-modal" class="modal hidden" style="display: none;">
+        <div class="modal-content">
+          <span class="close-doi-modal">&times;</span>
+          <h3>Fill Metadata from DOI</h3>
+          
+          <div class="form-group">
+            <label for="doi-input">Enter DOI:</label>
+            <input type="text" id="doi-input" placeholder="10.xxxx/xxxxx" style="width: 100%; box-sizing: border-box;">
+            <div class="setting-description">
+              Enter the DOI (Digital Object Identifier) to automatically fetch metadata. Example: 10.1038/nature12373
+            </div>
+          </div>
+          
+          <div class="modal-buttons">
+            <button id="fetch-doi-btn" class="action-btn">Fetch Metadata</button>
+            <button id="cancel-doi-btn" class="action-btn secondary-btn">Cancel</button>
           </div>
         </div>
       </div>
@@ -261,6 +283,7 @@
           <div class="help-section">
             <h4>Keyboard Shortcuts</h4>
             <ul class="shortcuts-list">
+              <li><code>Ctrl/Cmd+0</code> - Auto-fill metadata from DOI in selected text</li>
               <li><code>Ctrl/Cmd+1</code> - Set author from selected text</li>
               <li><code>Ctrl/Cmd+2</code> - Set quals from selected text</li>
               <li><code>Ctrl/Cmd+3</code> - Set date from selected text</li>

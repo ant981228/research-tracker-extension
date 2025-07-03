@@ -4354,11 +4354,21 @@ async function updateCurrentPageMetadata(field, value) {
     
     const existingMetadata = (existingResponse && existingResponse.success && existingResponse.metadata) ? existingResponse.metadata : {};
     
-    // Create updated metadata object with all existing fields plus the new one
-    const updatedMetadata = {
-      ...existingMetadata,
-      [field]: value
-    };
+    // Handle bulk updates (when field is 'bulk' and value is an object with multiple fields)
+    let updatedMetadata;
+    if (field === 'bulk' && typeof value === 'object') {
+      // Bulk update - merge all fields from value object
+      updatedMetadata = {
+        ...existingMetadata,
+        ...value
+      };
+    } else {
+      // Single field update
+      updatedMetadata = {
+        ...existingMetadata,
+        [field]: value
+      };
+    }
     
     // Send the complete metadata object back
     const updateResponse = await new Promise((resolve) => {
@@ -4370,7 +4380,11 @@ async function updateCurrentPageMetadata(field, value) {
     });
     
     if (updateResponse && updateResponse.success) {
-      console.log(`Updated ${field} to:`, value);
+      if (field === 'bulk') {
+        console.log('Bulk metadata update completed:', value);
+      } else {
+        console.log(`Updated ${field} to:`, value);
+      }
       
       // Update citation preview if it's visible
       if (citationPreview) {
@@ -4393,8 +4407,8 @@ document.addEventListener('keydown', async (e) => {
   
   console.log(`Research Tracker: Key pressed:`, e.key, `${modifierName}:`, modifierKey, 'Shift:', e.shiftKey, 'Alt:', e.altKey);
   
-  // Check for Cmd/Ctrl+[1-7]
-  if (modifierKey && !e.shiftKey && !e.altKey && e.key >= '1' && e.key <= '7') {
+  // Check for Cmd/Ctrl+[0-7]
+  if (modifierKey && !e.shiftKey && !e.altKey && ((e.key >= '1' && e.key <= '7') || e.key === '0')) {
     console.log(`Research Tracker: ${modifierName}+${e.key} detected`);
     e.preventDefault();
     e.stopPropagation();
@@ -4457,12 +4471,74 @@ document.addEventListener('keydown', async (e) => {
         parsedValue = parseDOI(selectedText);
         break;
         
+      case '0': // Auto-fill metadata from DOI
+        console.log('Research Tracker: Auto-fill from DOI requested');
+        
+        // Extract DOI from selected text
+        const extractedDoi = parseDOI(selectedText);
+        if (!extractedDoi) {
+          showToast('No valid DOI found in selected text', 'error');
+          return;
+        }
+        
+        // Show loading toast
+        showToast(`Fetching metadata for DOI: ${extractedDoi}...`, 'info');
+        
+        try {
+          // Send message to background to fetch DOI metadata
+          const response = await new Promise((resolve) => {
+            chrome.runtime.sendMessage({
+              action: 'fetchDOIMetadata',
+              doi: extractedDoi
+            }, resolve);
+          });
+          
+          if (chrome.runtime.lastError) {
+            console.error('Error fetching DOI metadata:', chrome.runtime.lastError);
+            showToast('Error communicating with extension', 'error');
+            return;
+          }
+          
+          if (response && response.success && response.metadata) {
+            // Update multiple metadata fields
+            const metadata = response.metadata;
+            const updates = {};
+            
+            if (metadata.title) updates.title = metadata.title;
+            if (metadata.author) updates.author = metadata.author;
+            if (metadata.publishDate) updates.publishDate = metadata.publishDate;
+            if (metadata.publisher) updates.publisher = metadata.publisher;
+            if (metadata.journal) updates.journal = metadata.journal;
+            if (metadata.doi) updates.doi = metadata.doi;
+            if (metadata.abstract) updates.quals = metadata.abstract;
+            if (metadata.contentType) updates.contentType = metadata.contentType;
+            
+            // Mark as DOI-sourced metadata
+            updates.doiMetadata = true;
+            updates.lastUpdated = new Date().toISOString();
+            
+            // Send all updates at once
+            await updateCurrentPageMetadata('bulk', updates);
+            
+            // Show success toast with details
+            const fieldCount = Object.keys(updates).filter(k => !['doiMetadata', 'lastUpdated'].includes(k)).length;
+            showToast(`Metadata auto-filled from DOI (${fieldCount} fields updated)`, 'success');
+          } else {
+            const errorMsg = response?.error || 'Failed to fetch metadata for this DOI';
+            showToast(`DOI fetch failed: ${errorMsg}`, 'error');
+          }
+        } catch (error) {
+          console.error('Exception in DOI auto-fill:', error);
+          showToast(`Error: ${error.message}`, 'error');
+        }
+        return; // Special case - don't continue with normal processing
+        
       default:
         // Unknown shortcut
         return;
     }
     
-    // Update metadata
+    // Update metadata (only for cases 1-7, not case 0)
     await updateCurrentPageMetadata(field, parsedValue);
     
     // Show success toast
