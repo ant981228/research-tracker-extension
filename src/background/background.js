@@ -1079,6 +1079,24 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       })();
       return true; // Keep the message channel open for async response
       break;
+      
+    case 'openPopupAndEditMetadata':
+      (async () => {
+        try {
+          // Store the URL that should be edited
+          chrome.storage.local.set({ 'pendingEditUrl': message.url });
+          
+          // Open the popup window
+          chrome.action.openPopup();
+          
+          sendResponse({ success: true });
+        } catch (e) {
+          console.error('Error opening popup for editing:', e);
+          sendResponse({ success: false, error: e.message });
+        }
+      })();
+      return true; // Keep the message channel open for async response
+      break;
   }
 });
 

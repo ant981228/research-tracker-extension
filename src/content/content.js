@@ -4943,15 +4943,28 @@ async function createCitationPreview() {
   `;
   header.innerHTML = `
     <span>Citation Preview</span>
-    <button id="citation-preview-close" style="
-      background: none;
-      border: none;
-      color: #6c757d;
-      cursor: pointer;
-      font-size: 14px;
-      padding: 0;
-      line-height: 1;
-    ">×</button>
+    <div style="display: flex; gap: 8px; align-items: center;">
+      <button id="citation-preview-edit" style="
+        background: #007bff;
+        border: none;
+        color: white;
+        cursor: pointer;
+        font-size: 11px;
+        padding: 4px 8px;
+        border-radius: 3px;
+        line-height: 1;
+        font-weight: 500;
+      ">Edit</button>
+      <button id="citation-preview-close" style="
+        background: none;
+        border: none;
+        color: #6c757d;
+        cursor: pointer;
+        font-size: 14px;
+        padding: 0;
+        line-height: 1;
+      ">×</button>
+    </div>
   `;
   
   // Create content area
@@ -4971,6 +4984,21 @@ async function createCitationPreview() {
   // Add close button handler
   header.querySelector('#citation-preview-close').addEventListener('click', () => {
     removeCitationPreview();
+  });
+  
+  // Add edit button handler
+  header.querySelector('#citation-preview-edit').addEventListener('click', () => {
+    // Send message to open popup and metadata modal
+    chrome.runtime.sendMessage({
+      action: 'openPopupAndEditMetadata',
+      url: window.location.href
+    }, (response) => {
+      if (response && response.success) {
+        console.log('Research Tracker: Popup opened for metadata editing');
+      } else {
+        console.warn('Research Tracker: Failed to open popup for editing');
+      }
+    });
   });
   
   // Add hover effects

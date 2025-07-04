@@ -106,6 +106,10 @@ let citationSettings = {
 // Modal management system
 let modalStack = [];
 
+// Pending edits preservation
+const PENDING_EDITS_KEY = 'pendingMetadataEdits';
+let hasPendingEdits = false;
+
 // Helper functions for modal management
 function showModal(modal, type) {
   // Add current modal to stack if there's one already visible
@@ -361,6 +365,25 @@ function init() {
   exportAllMetadataBtn.addEventListener('click', exportAllMetadata);
   clearAllMetadataBtn.addEventListener('click', clearAllMetadata);
   
+  // Add change listeners to metadata fields for auto-save detection
+  const metadataFields = [
+    metadataTitle, metadataAuthor, metadataDate, metadataType,
+    metadataJournal, metadataPublicationInfo, metadataPages, 
+    metadataDoi, metadataQuals
+  ];
+  
+  metadataFields.forEach(field => {
+    field.addEventListener('input', () => {
+      // Debounced auto-save pending edits
+      clearTimeout(field.saveTimeout);
+      field.saveTimeout = setTimeout(() => {
+        if (selectedPageUrl && !metadataModal.classList.contains('hidden')) {
+          savePendingEdits(selectedPageUrl);
+        }
+      }, 500); // Save after half a second of no typing
+    });
+  });
+  
   // Help button and modal event listeners
   helpBtn.addEventListener('click', () => {
     showModal(helpModal, 'help');
@@ -403,6 +426,13 @@ function init() {
     if (event.target === helpModal) closeHelpModal();
   });
   
+  // Save pending edits when popup is about to close
+  window.addEventListener('beforeunload', () => {
+    if (selectedPageUrl) {
+      savePendingEdits(selectedPageUrl);
+    }
+  });
+  
   // Add click handler for session renaming
   currentSessionName.addEventListener('click', renameCurrentSession);
   
@@ -421,6 +451,12 @@ function init() {
   
   // Load citation settings
   loadCitationSettings();
+  
+  // Check for and restore any pending editing session
+  checkAndRestorePendingSession();
+  
+  // Check if we were asked to open metadata modal for a specific URL
+  checkForPendingEditRequest();
 }
 
 // Function to update activity status in the background
@@ -759,6 +795,11 @@ function updateRecent(recentPages, recentSearches) {
 
 // Helper to select a URL for adding notes
 function selectUrl(url, title) {
+  // Clear pending edits if switching to a different URL
+  if (selectedPageUrl && selectedPageUrl !== url) {
+    clearPendingEdits();
+  }
+  
   selectedPageUrl = url;
   noteTargetEl.textContent = title || 'Selected Page';
 }
@@ -1360,6 +1401,192 @@ function downloadData(data, filename) {
   URL.revokeObjectURL(url);
 }
 
+// Pending Edits Functions
+async function savePendingEdits(url) {
+  if (!metadataModal || metadataModal.classList.contains('hidden')) {
+    return; // Not editing metadata
+  }
+
+  const pendingEdits = {
+    url: url,
+    timestamp: Date.now(),
+    modalWasOpen: true, // Track that metadata modal was open
+    edits: {
+      title: metadataTitle.value,
+      author: metadataAuthor.value,
+      date: metadataDate.value,
+      type: metadataType.value,
+      journal: metadataJournal.value,
+      publicationInfo: metadataPublicationInfo.value,
+      pages: metadataPages.value,
+      doi: metadataDoi.value,
+      quals: metadataQuals.value
+    }
+  };
+
+  // Check if any fields have been modified from original metadata
+  let hasChanges = false;
+  if (currentPageMetadata) {
+    // Compare against original metadata to detect actual changes
+    hasChanges = (
+      (pendingEdits.edits.title !== (currentPageMetadata.title || '')) ||
+      (pendingEdits.edits.author !== (currentPageMetadata.author || '')) ||
+      (pendingEdits.edits.date !== (currentPageMetadata.publishDate || '')) ||
+      (pendingEdits.edits.type !== (currentPageMetadata.contentType || '')) ||
+      (pendingEdits.edits.journal !== (currentPageMetadata.journal || '')) ||
+      (pendingEdits.edits.publicationInfo !== (currentPageMetadata.publicationInfo || '')) ||
+      (pendingEdits.edits.pages !== (currentPageMetadata.pages || '')) ||
+      (pendingEdits.edits.doi !== (currentPageMetadata.doi || '')) ||
+      (pendingEdits.edits.quals !== (currentPageMetadata.quals || ''))
+    );
+  } else {
+    // No original metadata, check if any fields have content
+    hasChanges = Object.values(pendingEdits.edits).some(value => value.trim() !== '');
+  }
+  
+  if (hasChanges) {
+    chrome.storage.local.set({ [PENDING_EDITS_KEY]: pendingEdits });
+    console.log('Research Tracker: Saved pending edits for', url);
+  }
+}
+
+async function restorePendingEdits(url) {
+  return new Promise((resolve) => {
+    chrome.storage.local.get([PENDING_EDITS_KEY], (result) => {
+      const pendingEdits = result[PENDING_EDITS_KEY];
+      
+      if (pendingEdits && pendingEdits.url === url) {
+        // Check if edits are recent (within 24 hours)
+        const ageHours = (Date.now() - pendingEdits.timestamp) / (1000 * 60 * 60);
+        if (ageHours < 24) {
+          console.log('Research Tracker: Restoring pending edits for', url);
+          
+          // Restore field values
+          metadataTitle.value = pendingEdits.edits.title || '';
+          metadataAuthor.value = pendingEdits.edits.author || '';
+          metadataDate.value = pendingEdits.edits.date || '';
+          metadataType.value = pendingEdits.edits.type || '';
+          metadataJournal.value = pendingEdits.edits.journal || '';
+          metadataPublicationInfo.value = pendingEdits.edits.publicationInfo || '';
+          metadataPages.value = pendingEdits.edits.pages || '';
+          metadataDoi.value = pendingEdits.edits.doi || '';
+          metadataQuals.value = pendingEdits.edits.quals || '';
+          
+          hasPendingEdits = true;
+          showPendingEditsIndicator();
+          resolve(true);
+        } else {
+          // Clear old edits
+          clearPendingEdits();
+          resolve(false);
+        }
+      } else {
+        resolve(false);
+      }
+    });
+  });
+}
+
+function clearPendingEdits() {
+  chrome.storage.local.remove([PENDING_EDITS_KEY]);
+  hasPendingEdits = false;
+  hidePendingEditsIndicator();
+  console.log('Research Tracker: Cleared pending edits');
+}
+
+function showPendingEditsIndicator() {
+  // Add visual indicator to modal header
+  const modalHeader = metadataModal.querySelector('h3');
+  if (modalHeader && !modalHeader.querySelector('.pending-indicator')) {
+    const indicator = document.createElement('span');
+    indicator.className = 'pending-indicator';
+    indicator.style.cssText = `
+      color: #f39c12;
+      font-size: 0.8em;
+      margin-left: 10px;
+      font-weight: normal;
+    `;
+    indicator.textContent = '(unsaved changes)';
+    modalHeader.appendChild(indicator);
+  }
+}
+
+function hidePendingEditsIndicator() {
+  const indicator = metadataModal.querySelector('.pending-indicator');
+  if (indicator) {
+    indicator.remove();
+  }
+}
+
+async function checkAndRestorePendingSession() {
+  return new Promise((resolve) => {
+    chrome.storage.local.get([PENDING_EDITS_KEY], (result) => {
+      const pendingEdits = result[PENDING_EDITS_KEY];
+      
+      if (pendingEdits && pendingEdits.modalWasOpen) {
+        // Check if edits are recent (within 24 hours)
+        const ageHours = (Date.now() - pendingEdits.timestamp) / (1000 * 60 * 60);
+        if (ageHours < 24) {
+          console.log('Research Tracker: Restoring editing session for', pendingEdits.url);
+          
+          // Set the selected URL to match the pending edits
+          selectedPageUrl = pendingEdits.url;
+          
+          // Update the note target to show which page is selected
+          noteTargetEl.textContent = `Restoring edits for ${new URL(pendingEdits.url).hostname}`;
+          
+          // Open the metadata modal automatically
+          setTimeout(() => {
+            openMetadataModal();
+          }, 100); // Small delay to ensure UI is ready
+          
+          resolve(true);
+        } else {
+          // Clear old edits
+          clearPendingEdits();
+          resolve(false);
+        }
+      } else {
+        resolve(false);
+      }
+    });
+  });
+}
+
+async function checkForPendingEditRequest() {
+  return new Promise((resolve) => {
+    chrome.storage.local.get(['pendingEditUrl'], (result) => {
+      const pendingEditUrl = result.pendingEditUrl;
+      
+      if (pendingEditUrl) {
+        console.log('Research Tracker: Opening metadata modal for requested URL:', pendingEditUrl);
+        
+        // Clear the pending edit request
+        chrome.storage.local.remove(['pendingEditUrl']);
+        
+        // Set the selected URL
+        selectedPageUrl = pendingEditUrl;
+        
+        // Update the note target to show which page is selected
+        try {
+          noteTargetEl.textContent = `Editing metadata for ${new URL(pendingEditUrl).hostname}`;
+        } catch (e) {
+          noteTargetEl.textContent = 'Editing metadata';
+        }
+        
+        // Open the metadata modal automatically
+        setTimeout(() => {
+          openMetadataModal();
+        }, 200); // Slightly longer delay to ensure everything is ready
+        
+        resolve(true);
+      } else {
+        resolve(false);
+      }
+    });
+  });
+}
+
 // Metadata Modal Functions
 let currentPageMetadata = null;
 
@@ -1416,12 +1643,22 @@ function openMetadataModal() {
       displayMetadataSourceInfo(currentPageMetadata);
     }
     
-    // Show the modal using our modal management system
-    showModal(metadataModal, 'metadata');
+    // Check for and restore pending edits after loading current metadata
+    restorePendingEdits(selectedPageUrl).then((restored) => {
+      if (!restored) {
+        // No pending edits, clear any indicator
+        hidePendingEditsIndicator();
+      }
+      
+      // Show the modal using our modal management system
+      showModal(metadataModal, 'metadata');
+    });
   });
 }
 
 function closeMetadataModal() {
+  // Clear pending edits when modal is explicitly closed
+  clearPendingEdits();
   hideCurrentModal();
 }
 
