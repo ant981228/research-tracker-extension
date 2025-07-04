@@ -5,7 +5,8 @@ const STORAGE_KEYS = {
   SESSIONS: 'sessions',
   LAST_SAVE_TIMESTAMP: 'lastSaveTimestamp',
   LAST_ACTIVITY_TIMESTAMP: 'lastActivityTimestamp',
-  POPUP_WINDOW_ID: 'popupWindowId'
+  POPUP_WINDOW_ID: 'popupWindowId',
+  METADATA_OBJECTS: 'metadataObjects'
 };
 
 // Alarm names
@@ -21,8 +22,10 @@ let currentSession = null;
 let autosaveInterval = null;
 let activityMonitorInterval = null;
 
-// Temporary metadata storage for when not recording
-let tempMetadata = {};
+// Metadata objects storage (persistent across sessions)
+let metadataObjects = {};
+// URL to metadata ID index for fast lookups
+let urlToMetadataIndex = {};
 
 // Rate limiting for adding notes
 let lastNoteTimestamp = 0;
@@ -60,8 +63,162 @@ const SEARCH_ENGINES = {
   }
 };
 
+// URL normalization function for consistent metadata object IDs
+function normalizeUrl(url) {
+  try {
+    const urlObj = new URL(url);
+    
+    // Normalize protocol to https
+    urlObj.protocol = 'https:';
+    
+    // Normalize hostname (remove www prefix)
+    if (urlObj.hostname.startsWith('www.')) {
+      urlObj.hostname = urlObj.hostname.substring(4);
+    }
+    
+    // Remove common tracking parameters
+    const trackingParams = [
+      'utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content',
+      'gclid', 'fbclid', 'mc_cid', 'mc_eid', '_ga', '_gid', 'ref', 'referer',
+      'source', 'campaign', 'medium', 'content'
+    ];
+    
+    trackingParams.forEach(param => {
+      urlObj.searchParams.delete(param);
+    });
+    
+    // Remove trailing slash from pathname
+    if (urlObj.pathname.endsWith('/') && urlObj.pathname.length > 1) {
+      urlObj.pathname = urlObj.pathname.slice(0, -1);
+    }
+    
+    return urlObj.toString();
+  } catch (e) {
+    console.warn('Failed to normalize URL:', url, e);
+    return url;
+  }
+}
+
+// Generate unique metadata object ID
+function generateMetadataId() {
+  return 'meta_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+}
+
+// Create or retrieve metadata object for a URL
+async function getOrCreateMetadataObject(url) {
+  const normalizedUrl = normalizeUrl(url);
+  
+  // Fast lookup using URL index
+  const existingId = urlToMetadataIndex[normalizedUrl];
+  if (existingId && metadataObjects[existingId]) {
+    return { id: existingId, metadataObj: metadataObjects[existingId] };
+  }
+  
+  // Create new metadata object
+  const id = generateMetadataId();
+  const metadataObj = {
+    id: id,
+    url: normalizedUrl,
+    originalUrl: url,
+    created: new Date().toISOString(),
+    metadata: {},
+    sessions: {},
+    searchContexts: []
+  };
+  
+  metadataObjects[id] = metadataObj;
+  urlToMetadataIndex[normalizedUrl] = id;
+  await saveMetadataObjects();
+  
+  return { id, metadataObj };
+}
+
+// Update metadata for a metadata object
+async function updateMetadataObject(metadataId, metadataUpdates) {
+  if (!metadataObjects[metadataId]) {
+    console.warn('Metadata object not found:', metadataId);
+    return false;
+  }
+  
+  metadataObjects[metadataId].metadata = {
+    ...metadataObjects[metadataId].metadata,
+    ...metadataUpdates,
+    lastUpdated: new Date().toISOString()
+  };
+  
+  await saveMetadataObjects();
+  return true;
+}
+
+// Add session data to metadata object
+async function addSessionDataToMetadataObject(metadataId, sessionId, sessionData) {
+  if (!metadataObjects[metadataId]) {
+    console.warn('Metadata object not found:', metadataId);
+    return false;
+  }
+  
+  if (!metadataObjects[metadataId].sessions[sessionId]) {
+    metadataObjects[metadataId].sessions[sessionId] = {
+      timestamps: [],
+      notes: [],
+      searchContexts: []
+    };
+  }
+  
+  const sessionObj = metadataObjects[metadataId].sessions[sessionId];
+  
+  if (sessionData.timestamp) {
+    sessionObj.timestamps.push(sessionData.timestamp);
+  }
+  
+  if (sessionData.note) {
+    sessionObj.notes.push({
+      text: sessionData.note,
+      timestamp: new Date().toISOString()
+    });
+  }
+  
+  if (sessionData.searchContext) {
+    sessionObj.searchContexts.push({
+      ...sessionData.searchContext,
+      timestamp: new Date().toISOString()
+    });
+  }
+  
+  await saveMetadataObjects();
+  return true;
+}
+
+// Save metadata objects to storage
+async function saveMetadataObjects() {
+  return new Promise((resolve) => {
+    chrome.storage.local.set({ [STORAGE_KEYS.METADATA_OBJECTS]: metadataObjects }, () => {
+      resolve();
+    });
+  });
+}
+
+// Load metadata objects from storage
+async function loadMetadataObjects() {
+  return new Promise((resolve) => {
+    chrome.storage.local.get([STORAGE_KEYS.METADATA_OBJECTS], (result) => {
+      metadataObjects = result[STORAGE_KEYS.METADATA_OBJECTS] || {};
+      
+      // Rebuild URL index for fast lookups
+      urlToMetadataIndex = {};
+      for (const [id, metadataObj] of Object.entries(metadataObjects)) {
+        if (metadataObj.url) {
+          urlToMetadataIndex[metadataObj.url] = id;
+        }
+      }
+      
+      resolve();
+    });
+  });
+}
+
 // Initialize on extension startup
-chrome.runtime.onInstalled.addListener(() => {
+chrome.runtime.onInstalled.addListener(async () => {
   chrome.storage.local.get([STORAGE_KEYS.IS_RECORDING], (result) => {
     if (result[STORAGE_KEYS.IS_RECORDING] === undefined) {
       chrome.storage.local.set({ [STORAGE_KEYS.IS_RECORDING]: false });
@@ -75,6 +232,9 @@ chrome.runtime.onInstalled.addListener(() => {
       chrome.storage.local.set({ [STORAGE_KEYS.SESSIONS]: [] });
     }
   });
+  
+  // Initialize metadata objects storage
+  await loadMetadataObjects();
   
   // Initialize the activity timestamp
   updateActivityTimestamp();
@@ -103,7 +263,8 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 });
 
 // Check for interrupted sessions on browser startup
-chrome.runtime.onStartup.addListener(() => {
+chrome.runtime.onStartup.addListener(async () => {
+  await loadMetadataObjects();
   recoverInterruptedSession();
   updateActivityTimestamp();
   updateBadge();
@@ -113,7 +274,8 @@ chrome.runtime.onStartup.addListener(() => {
 chrome.action.setBadgeBackgroundColor({ color: '#DB4437' }); // Google Red
 
 // Also check when the extension itself starts (handles extension updates/reloads)
-(function initializeExtension() {
+(async function initializeExtension() {
+  await loadMetadataObjects();
   recoverInterruptedSession();
   updateActivityTimestamp();
   updateBadge();
@@ -163,6 +325,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       (async () => {
         try {
           if (message.url && message.metadata) {
+            // Only process if recording is active
+            if (!isRecording) {
+              console.log('Not recording, ignoring metadata update');
+              sendResponse({ success: false, error: 'Not recording' });
+              return;
+            }
+            
             // Check if this is a manual update (from popup) vs automatic
             const isManualUpdate = message.isManualUpdate || false;
             
@@ -173,21 +342,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
               metadataToUpdate = await enhanceMetadataWithDOI(message.url, message.metadata);
             }
             
-            if (isRecording && currentSession) {
-              // Update in the session
-              const result = updatePageVisitMetadata(message.url, metadataToUpdate);
-              console.log('Metadata update complete, result:', result);
-              sendResponse({ success: true });
-            } else {
-              // Store temporarily when not recording
-              tempMetadata[message.url] = {
-                ...tempMetadata[message.url],
-                ...metadataToUpdate,
-                lastUpdated: new Date().toISOString()
-              };
-              console.log('Metadata stored temporarily for:', message.url);
-              sendResponse({ success: true });
-            }
+            // Get or create metadata object
+            const { id: metadataId } = await getOrCreateMetadataObject(message.url);
+            
+            // Update the metadata object
+            await updateMetadataObject(metadataId, metadataToUpdate);
+            
+            console.log('Metadata update complete for:', metadataId);
+            sendResponse({ success: true, metadataId });
           } else {
             console.warn('Cannot update metadata: missing URL or metadata');
             sendResponse({ success: false, error: 'Missing URL or metadata' });
@@ -201,24 +363,41 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       break;
       
     case 'getPageMetadata':
-      try {
-        if (message.url) {
-          let metadata = {};
-          if (isRecording && currentSession) {
-            // Get from session
-            metadata = getPageMetadataForUrl(message.url);
+      (async () => {
+        try {
+          if (message.url) {
+            // Only process if recording is active
+            if (!isRecording) {
+              console.log('Not recording, returning empty metadata');
+              sendResponse({ success: false, error: 'Not recording', metadata: {} });
+              return;
+            }
+            
+            const normalizedUrl = normalizeUrl(message.url);
+            
+            // Fast lookup using URL index
+            const metadataId = urlToMetadataIndex[normalizedUrl];
+            const metadataObj = metadataId ? metadataObjects[metadataId] : null;
+            
+            if (metadataObj) {
+              // Include metadata plus object-level information for source tracking
+              const metadata = {
+                ...metadataObj.metadata,
+                created: metadataObj.created,
+                originalUrl: metadataObj.originalUrl
+              };
+              sendResponse({ success: true, metadata, metadataId: metadataObj.id });
+            } else {
+              sendResponse({ success: true, metadata: {}, metadataId: null });
+            }
           } else {
-            // Get from temporary storage
-            metadata = tempMetadata[message.url] || {};
+            sendResponse({ success: false, error: 'Missing URL', metadata: {} });
           }
-          sendResponse({ success: true, metadata });
-        } else {
-          sendResponse({ success: false, error: 'Missing URL', metadata: {} });
+        } catch (e) {
+          console.error('Error in getPageMetadata:', e);
+          sendResponse({ success: false, error: e.message, metadata: {} });
         }
-      } catch (e) {
-        console.error('Error in getPageMetadata:', e);
-        sendResponse({ success: false, error: e.message, metadata: {} });
-      }
+      })();
       return true; // Keep the message channel open for async response
       break;
     
@@ -530,12 +709,20 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         const currentTab = tabs[0];
         const url = currentTab.url;
         
-        // Get metadata for the current page
+        // Only work when recording is active
+        if (!isRecording) {
+          sendResponse({ success: false, error: 'Recording must be active to copy citations' });
+          return;
+        }
+        
+        // Get metadata from metadata objects
+        const normalizedUrl = normalizeUrl(url);
         let metadata = {};
-        if (isRecording && currentSession) {
-          metadata = getPageMetadataForUrl(url);
-        } else {
-          metadata = tempMetadata[url] || {};
+        
+        // Fast lookup using URL index
+        const metadataId = urlToMetadataIndex[normalizedUrl];
+        if (metadataId && metadataObjects[metadataId]) {
+          metadata = metadataObjects[metadataId].metadata;
         }
         
         // Get citation settings from storage
@@ -809,6 +996,65 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           }
         } catch (e) {
           console.error('Error in fetchDOIMetadata:', e);
+          sendResponse({ success: false, error: e.message });
+        }
+      })();
+      return true; // Keep the message channel open for async response
+      break;
+      
+    case 'getRecordingStatus':
+      sendResponse({ success: true, isRecording });
+      break;
+      
+    case 'exportAllMetadata':
+      (async () => {
+        try {
+          const count = Object.keys(metadataObjects).length;
+          const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+          const filename = `research-tracker-metadata-${timestamp}.json`;
+          
+          const exportData = {
+            exportedAt: new Date().toISOString(),
+            version: '1.0',
+            type: 'metadata',
+            count: count,
+            metadata: metadataObjects
+          };
+          
+          const jsonData = JSON.stringify(exportData, null, 2);
+          
+          sendResponse({
+            success: true,
+            data: jsonData,
+            filename: filename,
+            count: count
+          });
+        } catch (e) {
+          console.error('Error exporting metadata:', e);
+          sendResponse({ success: false, error: e.message });
+        }
+      })();
+      return true; // Keep the message channel open for async response
+      break;
+      
+    case 'clearAllMetadata':
+      (async () => {
+        try {
+          const count = Object.keys(metadataObjects).length;
+          
+          // Clear both the in-memory objects and the index
+          metadataObjects = {};
+          urlToMetadataIndex = {};
+          
+          // Save the cleared state to storage
+          await saveMetadataObjects();
+          
+          sendResponse({
+            success: true,
+            count: count
+          });
+        } catch (e) {
+          console.error('Error clearing metadata:', e);
           sendResponse({ success: false, error: e.message });
         }
       })();
@@ -1158,16 +1404,22 @@ function handleTabUpdated(tabId, changeInfo, tab) {
   const isSearchEngine = checkForSearch(tab);
   
   // Check if this is a new tab page or other browser page that shouldn't be logged
-  isExcludedFromLoggingAsync(tab.url).then(isExcludedPage => {
+  isExcludedFromLoggingAsync(tab.url).then(async isExcludedPage => {
     // Only log as a page visit if it's not a search engine and not an excluded page
     if (!isSearchEngine && !isExcludedPage) {
-      logPageVisit({
-        url: tab.url,
-        title: tab.title || '',
-        timestamp: new Date().toISOString(),
-        tabId: tabId
-      });
+      try {
+        await logPageVisit({
+          url: tab.url,
+          title: tab.title || '',
+          timestamp: new Date().toISOString(),
+          tabId: tabId
+        });
+      } catch (error) {
+        console.error('Error logging page visit:', error);
+      }
     }
+  }).catch(error => {
+    console.error('Error checking if page should be excluded from logging:', error);
   });
 }
 
@@ -1187,17 +1439,26 @@ function handleNavigationCompleted(details) {
     const isSearchEngine = checkForSearch(tab);
     
     // Check if this is an excluded page
-    isExcludedFromLoggingAsync(tab.url).then(isExcludedPage => {
+    isExcludedFromLoggingAsync(tab.url).then(async isExcludedPage => {
       // Only extract and update metadata for non-search pages and non-excluded pages
       if (!isSearchEngine && !isExcludedPage) {
+        // Get or create metadata object first
+        const { id: metadataId, metadataObj } = await getOrCreateMetadataObject(tab.url);
+        
+        // If metadata object already has metadata, don't re-extract
+        if (Object.keys(metadataObj.metadata).length > 0) {
+          console.log('Metadata already exists for URL, skipping extraction:', tab.url);
+          return;
+        }
+        
         chrome.tabs.sendMessage(details.tabId, { action: 'extractMetadata' }, async (response) => {
           if (chrome.runtime.lastError || !response) return;
           
           // Enhance metadata with DOI if available
           const enhancedMetadata = await enhanceMetadataWithDOI(details.url, response.metadata);
           
-          // Update page visit with enhanced metadata
-          updatePageVisitMetadata(details.url, enhancedMetadata);
+          // Update metadata object with enhanced metadata
+          await updatePageVisitMetadata(details.url, enhancedMetadata);
         });
       }
     });
@@ -1517,8 +1778,11 @@ function logSearch(searchData) {
   });
 }
 
-function logPageVisit(visitData) {
+async function logPageVisit(visitData) {
   if (!currentSession) return;
+  
+  // Get or create metadata object for this URL
+  const { id: metadataId } = await getOrCreateMetadataObject(visitData.url);
   
   // Try to find the search that led to this page
   let sourceSearch = null;
@@ -1536,9 +1800,21 @@ function logPageVisit(visitData) {
     }
   }
   
+  // Add session data to metadata object
+  const sessionData = {
+    timestamp: visitData.timestamp
+  };
+  
+  if (sourceSearch) {
+    sessionData.searchContext = sourceSearch;
+  }
+  
+  await addSessionDataToMetadataObject(metadataId, currentSession.id, sessionData);
+  
   const visitEvent = {
     type: 'pageVisit',
     ...visitData,
+    metadataId,
     sourceSearch,
     notes: []
   };
@@ -1553,105 +1829,16 @@ function logPageVisit(visitData) {
   });
 }
 
-function updatePageVisitMetadata(url, metadata) {
+async function updatePageVisitMetadata(url, metadata) {
   if (!currentSession) return;
   
   console.log('Updating metadata for URL:', url, metadata);
-  let updated = false;
   
-  // Try to find the URL in page visits
-  for (let i = currentSession.pageVisits.length - 1; i >= 0; i--) {
-    const visit = currentSession.pageVisits[i];
-    if (visit.url === url) {
-      updated = true;
-      console.log('Found URL in page visits at index', i);
-      
-      // Merge with existing metadata if present
-      const mergedMetadata = {
-        ...(visit.metadata || {}),
-        ...metadata
-      };
-      
-      // Update with metadata
-      currentSession.pageVisits[i] = {
-        ...visit,
-        metadata: mergedMetadata
-      };
-      
-      // Also update in events array
-      for (let j = currentSession.events.length - 1; j >= 0; j--) {
-        const event = currentSession.events[j];
-        if (event.type === 'pageVisit' && event.url === url) {
-          currentSession.events[j] = {
-            ...event,
-            metadata: mergedMetadata
-          };
-          break;
-        }
-      }
-      
-      break;
-    }
-  }
+  // Get or create metadata object and update it
+  const { id: metadataId } = await getOrCreateMetadataObject(url);
+  await updateMetadataObject(metadataId, metadata);
   
-  // If not found in page visits, try to find in searches
-  if (!updated) {
-    for (let i = currentSession.searches.length - 1; i >= 0; i--) {
-      const search = currentSession.searches[i];
-      if (search.url === url) {
-        updated = true;
-        console.log('Found URL in searches at index', i);
-        
-        // Merge with existing metadata if present
-        const mergedMetadata = {
-          ...(search.metadata || {}),
-          ...metadata
-        };
-        
-        // Update with metadata
-        currentSession.searches[i] = {
-          ...search,
-          metadata: mergedMetadata
-        };
-        
-        // Also update in events array
-        for (let j = currentSession.events.length - 1; j >= 0; j--) {
-          const event = currentSession.events[j];
-          if (event.type === 'search' && event.url === url) {
-            currentSession.events[j] = {
-              ...event,
-              metadata: mergedMetadata
-            };
-            break;
-          }
-        }
-        
-        break;
-      }
-    }
-  }
-  
-  // If still not found, add as a standalone metadata entry
-  if (!updated) {
-    console.log('URL not found in existing records, creating new entry');
-    // Create a new event with this metadata
-    const metadataEvent = {
-      type: 'metadata',
-      url: url,
-      timestamp: new Date().toISOString(),
-      metadata: metadata
-    };
-    
-    // Add to events array
-    currentSession.events.push(metadataEvent);
-  }
-  
-  // Save to storage and update last save timestamp
-  console.log('Saving updated session to storage');
-  chrome.storage.local.set({ 
-    [STORAGE_KEYS.CURRENT_SESSION]: currentSession,
-    [STORAGE_KEYS.LAST_SAVE_TIMESTAMP]: Date.now()
-  });
+  console.log('Metadata object updated:', metadataId);
   
   return true; // Indicate success
 }
@@ -1866,42 +2053,6 @@ async function enhanceMetadataWithDOI(url, metadata) {
   }
 }
 
-function getPageMetadataForUrl(url) {
-  if (!currentSession) return {};
-  
-  console.log('Looking for metadata for URL:', url);
-  
-  // Find the page visit for this URL (most recent first)
-  for (let i = currentSession.pageVisits.length - 1; i >= 0; i--) {
-    const visit = currentSession.pageVisits[i];
-    if (visit.url === url) {
-      console.log('Found metadata in page visits:', visit.metadata);
-      return visit.metadata || {};
-    }
-  }
-  
-  // Check in search results too
-  for (let i = currentSession.searches.length - 1; i >= 0; i--) {
-    const search = currentSession.searches[i];
-    if (search.url === url) {
-      console.log('Found metadata in searches:', search.metadata);
-      return search.metadata || {};
-    }
-  }
-  
-  // Check in standalone metadata events
-  for (let i = currentSession.events.length - 1; i >= 0; i--) {
-    const event = currentSession.events[i];
-    if ((event.type === 'metadata' || event.type === 'pageVisit' || event.type === 'search') && 
-        event.url === url && event.metadata) {
-      console.log('Found metadata in events:', event.metadata);
-      return event.metadata;
-    }
-  }
-  
-  console.log('No metadata found for URL:', url);
-  return {};
-}
 
 function getExistingNoteForUrl(url) {
   if (!currentSession) return null;
@@ -2228,14 +2379,56 @@ async function deleteSession(sessionId) {
 
 async function exportSession(sessionId, format = 'json') {
   return new Promise((resolve, reject) => {
-    chrome.storage.local.get([STORAGE_KEYS.SESSIONS], (result) => {
+    chrome.storage.local.get([STORAGE_KEYS.SESSIONS, STORAGE_KEYS.METADATA_OBJECTS], async (result) => {
       const sessions = result[STORAGE_KEYS.SESSIONS] || [];
+      const metadataObjects = result[STORAGE_KEYS.METADATA_OBJECTS] || {};
+      
       // Deep clone the session to avoid modifying the original
       const session = JSON.parse(JSON.stringify(sessions.find(s => s.id === sessionId)));
       
       if (!session) {
         reject('Session not found');
         return;
+      }
+      
+      // Resolve metadata objects for page visits
+      if (session.pageVisits) {
+        session.pageVisits = session.pageVisits.map(visit => {
+          if (visit.metadataId && metadataObjects[visit.metadataId]) {
+            const metadataObj = metadataObjects[visit.metadataId];
+            const sessionData = metadataObj.sessions[sessionId] || {};
+            
+            // Merge metadata with session-specific notes
+            return {
+              ...visit,
+              metadata: metadataObj.metadata,
+              notes: [...(visit.notes || []), ...(sessionData.notes || [])]
+            };
+          } else {
+            // Legacy page visit without metadata object
+            return visit;
+          }
+        });
+      }
+      
+      // Resolve metadata objects for events
+      if (session.events) {
+        session.events = session.events.map(event => {
+          if (event.type === 'pageVisit' && event.metadataId && metadataObjects[event.metadataId]) {
+            const metadataObj = metadataObjects[event.metadataId];
+            const sessionData = metadataObj.sessions[sessionId] || {};
+            
+            // Merge metadata with session-specific notes
+            return {
+              ...event,
+              metadata: metadataObj.metadata,
+              notes: [...(event.notes || []), ...(sessionData.notes || [])]
+            };
+          } else {
+            // Legacy event or non-pageVisit event
+            return event;
+          }
+        });
       }
       
       // Deduplicate notes in searches
@@ -2247,7 +2440,7 @@ async function exportSession(sessionId, format = 'json') {
         });
       }
       
-      // Deduplicate notes in page visits
+      // Deduplicate notes in page visits (after metadata resolution)
       if (session.pageVisits) {
         session.pageVisits.forEach(visit => {
           if (visit.notes && visit.notes.length > 1) {

@@ -77,6 +77,8 @@ let citationPreviewEnabled;
 let excludedDomainsInput;
 let saveSettingsBtn;
 let cancelSettingsBtn;
+let exportAllMetadataBtn;
+let clearAllMetadataBtn;
 
 // Help Modal Elements
 let helpBtn;
@@ -271,6 +273,8 @@ function init() {
   excludedDomainsInput = document.getElementById('excluded-domains');
   saveSettingsBtn = document.getElementById('save-settings-btn');
   cancelSettingsBtn = document.getElementById('cancel-settings-btn');
+  exportAllMetadataBtn = document.getElementById('export-all-metadata-btn');
+  clearAllMetadataBtn = document.getElementById('clear-all-metadata-btn');
   
   // Initialize help modal elements
   helpBtn = document.getElementById('help-btn');
@@ -352,6 +356,8 @@ function init() {
   closeSettingsModalBtn.addEventListener('click', closeSettingsModal);
   cancelSettingsBtn.addEventListener('click', closeSettingsModal);
   saveSettingsBtn.addEventListener('click', saveCitationSettings);
+  exportAllMetadataBtn.addEventListener('click', exportAllMetadata);
+  clearAllMetadataBtn.addEventListener('click', clearAllMetadata);
   
   // Help button and modal event listeners
   helpBtn.addEventListener('click', () => {
@@ -452,6 +458,10 @@ function updateUI(status) {
     pauseBtn.disabled = false;
     stopBtn.disabled = false;
     
+    // Reset button text in case they were stuck in loading states
+    startBtn.textContent = 'Record';
+    stopBtn.textContent = 'Stop';
+    
     // Hide session name input when recording
     sessionNameInputContainer.style.display = 'none';
     
@@ -486,6 +496,11 @@ function updateUI(status) {
     startBtn.disabled = false;
     pauseBtn.disabled = true;
     stopBtn.disabled = true;
+    
+    // Reset button text when not recording
+    startBtn.textContent = 'Record';
+    pauseBtn.textContent = 'Pause';
+    stopBtn.textContent = 'Stop';
     
     // Show session name input when not recording
     sessionNameInputContainer.style.display = 'block';
@@ -1393,14 +1408,8 @@ function openMetadataModal() {
       metadataDoi.value = currentPageMetadata.doi || '';
       metadataQuals.value = currentPageMetadata.quals || '';
       
-      // Show extraction info if available
-      if (currentPageMetadata.extractorType) {
-        let infoText = `Metadata extracted via ${currentPageMetadata.extractorType}`;
-        if (currentPageMetadata.extractorSite) {
-          infoText += ` from ${currentPageMetadata.extractorSite}`;
-        }
-        metadataInfo.innerHTML = `<small style="color: #666; font-style: italic;">${infoText}</small>`;
-      }
+      // Show comprehensive metadata source information
+      displayMetadataSourceInfo(currentPageMetadata);
     }
     
     // Show the modal using our modal management system
@@ -1419,7 +1428,7 @@ function saveMetadata() {
     return;
   }
   
-  // Create metadata object
+  // Create metadata object - include all fields, even if empty
   const metadata = {
     title: metadataTitle.value.trim(),
     author: metadataAuthor.value.trim(),
@@ -1437,13 +1446,6 @@ function saveMetadata() {
   if (metadata.author && metadata.author.includes(',')) {
     metadata.authors = metadata.author.split(',').map(a => a.trim()).filter(a => a);
   }
-  
-  // Only include fields that have values
-  Object.keys(metadata).forEach(key => {
-    if (!metadata[key] && key !== 'manuallyEdited') {
-      delete metadata[key];
-    }
-  });
   
   // Disable the save button and show saving indicator
   saveMetadataBtn.disabled = true;
@@ -1625,10 +1627,9 @@ function fillMetadataForm(metadata) {
   if (metadata.contentType) metadataType.value = metadata.contentType;
   if (metadata.abstract) metadataQuals.value = metadata.abstract;
   
-  // Add info about DOI source
-  if (metadataInfo) {
-    metadataInfo.innerHTML = '<div class="metadata-source-info" style="color: #2e7d32; font-size: 0.9em; margin-top: 10px;">✓ Metadata fetched from DOI registry</div>';
-  }
+  // Update metadata info to show DOI source
+  const updatedMetadata = { ...metadata, doiMetadata: true };
+  displayMetadataSourceInfo(updatedMetadata);
 }
 
 // Helper functions
@@ -2049,4 +2050,167 @@ function closeSettingsModal() {
 
 function closeHelpModal() {
   hideCurrentModal();
+}
+
+// Export all metadata functionality
+function exportAllMetadata() {
+  // Disable button and show loading state
+  exportAllMetadataBtn.disabled = true;
+  exportAllMetadataBtn.textContent = 'Exporting...';
+  
+  chrome.runtime.sendMessage({
+    action: 'exportAllMetadata'
+  }, (response) => {
+    // Re-enable button
+    exportAllMetadataBtn.disabled = false;
+    exportAllMetadataBtn.textContent = 'Export All Metadata';
+    
+    if (chrome.runtime.lastError) {
+      console.error('Error exporting metadata:', chrome.runtime.lastError);
+      alert('Error exporting metadata. Please try again.');
+      return;
+    }
+    
+    if (response && response.success) {
+      // Create and download the file
+      const blob = new Blob([response.data], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = response.filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      
+      // Show success message
+      alert(`Successfully exported ${response.count} metadata records to ${response.filename}`);
+    } else {
+      console.error('Export failed:', response?.error);
+      alert(response?.error || 'Failed to export metadata. Please try again.');
+    }
+  });
+}
+
+// Display comprehensive metadata source information
+function displayMetadataSourceInfo(metadata) {
+  if (!metadataInfo || !metadata) {
+    return;
+  }
+  
+  const infoItems = [];
+  
+  // Check if metadata came from DOI API
+  if (metadata.doiMetadata) {
+    infoItems.push({
+      text: 'Metadata fetched from DOI registry',
+      color: '#2e7d32',
+      icon: '✓'
+    });
+  }
+  // Check if this is from an automatic extractor
+  else if (metadata.extractorType) {
+    let extractorText = `Metadata extracted via ${metadata.extractorType}`;
+    if (metadata.extractorSite) {
+      extractorText += ` from ${metadata.extractorSite}`;
+    }
+    infoItems.push({
+      text: extractorText,
+      color: '#666',
+      icon: '⚙'
+    });
+  }
+  
+  // Check if this is a repeat visit (has creation timestamp vs current visit)
+  if (metadata.created && metadata.lastUpdated) {
+    const created = new Date(metadata.created);
+    const lastUpdated = new Date(metadata.lastUpdated);
+    
+    // If last updated is significantly after creation, this is likely a repeat visit
+    if (lastUpdated.getTime() - created.getTime() > 60000) { // More than 1 minute difference
+      infoItems.push({
+        text: 'Metadata loaded from previous session',
+        color: '#1976d2',
+        icon: '↻'
+      });
+    }
+  }
+  
+  // Check if manual edits were made
+  if (metadata.manuallyEdited) {
+    const editTime = metadata.editTimestamp ? new Date(metadata.editTimestamp) : null;
+    let editText = 'Manual edits applied';
+    if (editTime) {
+      const now = new Date();
+      const diffMinutes = Math.round((now.getTime() - editTime.getTime()) / 60000);
+      if (diffMinutes < 1) {
+        editText += ' (just now)';
+      } else if (diffMinutes < 60) {
+        editText += ` (${diffMinutes}m ago)`;
+      } else if (diffMinutes < 1440) {
+        editText += ` (${Math.round(diffMinutes / 60)}h ago)`;
+      } else {
+        editText += ` (${Math.round(diffMinutes / 1440)}d ago)`;
+      }
+    }
+    infoItems.push({
+      text: editText,
+      color: '#f57c00',
+      icon: '✏'
+    });
+  }
+  
+  // Render the info items
+  if (infoItems.length > 0) {
+    const infoHtml = infoItems.map(item => 
+      `<div style="color: ${item.color}; font-size: 0.85em; margin: 2px 0; line-height: 1.3;">
+        <span style="margin-right: 6px;">${item.icon}</span>${item.text}
+      </div>`
+    ).join('');
+    
+    metadataInfo.innerHTML = `<div style="border: 1px solid #e0e0e0; background: #f9f9f9; padding: 8px; border-radius: 4px; margin-top: 8px;">${infoHtml}</div>`;
+  } else {
+    metadataInfo.innerHTML = '';
+  }
+}
+
+// Clear all metadata functionality
+function clearAllMetadata() {
+  // Show confirmation dialog
+  const confirmed = confirm(
+    'Are you sure you want to permanently delete ALL metadata records?\n\n' +
+    'This will remove all page metadata collected across all sessions. ' +
+    'Session data (page visits, searches, notes) will not be affected, but ' +
+    'metadata details (titles, authors, dates, etc.) will be lost.\n\n' +
+    'This action cannot be undone.'
+  );
+  
+  if (!confirmed) {
+    return;
+  }
+  
+  // Disable button and show loading state
+  clearAllMetadataBtn.disabled = true;
+  clearAllMetadataBtn.textContent = 'Clearing...';
+  
+  chrome.runtime.sendMessage({
+    action: 'clearAllMetadata'
+  }, (response) => {
+    // Re-enable button
+    clearAllMetadataBtn.disabled = false;
+    clearAllMetadataBtn.textContent = 'Clear All Metadata';
+    
+    if (chrome.runtime.lastError) {
+      console.error('Error clearing metadata:', chrome.runtime.lastError);
+      alert('Error clearing metadata. Please try again.');
+      return;
+    }
+    
+    if (response && response.success) {
+      alert(`Successfully cleared ${response.count} metadata records.`);
+    } else {
+      console.error('Clear failed:', response?.error);
+      alert(response?.error || 'Failed to clear metadata. Please try again.');
+    }
+  });
 }

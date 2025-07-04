@@ -4414,8 +4414,20 @@ document.addEventListener('keydown', async (e) => {
     e.stopPropagation();
     e.stopImmediatePropagation();
     
-    // Keyboard shortcuts now work even when not recording
-    // Metadata will be stored temporarily for the current page
+    // Keyboard shortcuts only work when recording is active
+    // Check if recording is active before processing
+    
+    // Check if recording is active
+    const recordingStatusResponse = await new Promise((resolve) => {
+      chrome.runtime.sendMessage({
+        action: 'getRecordingStatus'
+      }, resolve);
+    });
+    
+    if (chrome.runtime.lastError || !recordingStatusResponse || !recordingStatusResponse.isRecording) {
+      showToast('Recording must be active to use keyboard shortcuts', 'error');
+      return;
+    }
     
     // Get selected text
     const selectedText = window.getSelection().toString();
@@ -4672,10 +4684,22 @@ function shouldExcludeCitationPreview() {
   return false;
 }
 
-function createCitationPreview() {
+async function createCitationPreview() {
   // Check if this site should be excluded
   if (shouldExcludeCitationPreview()) {
     console.log('Research Tracker: Citation preview disabled for this site');
+    return;
+  }
+  
+  // Check if recording is active
+  const recordingStatusResult = await new Promise(resolve => {
+    chrome.runtime.sendMessage({
+      action: 'getRecordingStatus'
+    }, resolve);
+  });
+  
+  if (!recordingStatusResult || !recordingStatusResult.isRecording) {
+    console.log('Research Tracker: Citation preview disabled - recording not active');
     return;
   }
   
@@ -4777,6 +4801,18 @@ async function updateCitationPreview() {
   if (!contentEl) return;
   
   try {
+    // Check if recording is active
+    const recordingStatusResult = await new Promise(resolve => {
+      chrome.runtime.sendMessage({
+        action: 'getRecordingStatus'
+      }, resolve);
+    });
+    
+    if (!recordingStatusResult || !recordingStatusResult.isRecording) {
+      contentEl.innerHTML = '<em>Citation preview only available when recording is active</em>';
+      return;
+    }
+    
     // Get citation settings
     const settingsResult = await new Promise(resolve => {
       chrome.storage.local.get(['citationSettings'], resolve);
@@ -4791,15 +4827,8 @@ async function updateCitationPreview() {
       }, resolve);
     });
     
-    // Fallback to extracted metadata if no stored metadata
-    const storedMetadata = (metadataResult && metadataResult.success && metadataResult.metadata) ? metadataResult.metadata : {};
-    const extractedMetadata = extractPageMetadata();
-    
-    // Merge stored metadata (priority) with extracted metadata (fallback)
-    const metadata = {
-      ...extractedMetadata,
-      ...storedMetadata
-    };
+    // Only use stored metadata (no fallback to extracted metadata when not recording)
+    const metadata = (metadataResult && metadataResult.success && metadataResult.metadata) ? metadataResult.metadata : {};
     
     // Generate citation
     const citation = generateCitationPreview(metadata, window.location.href, document.title, settings);

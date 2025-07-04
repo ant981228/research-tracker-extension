@@ -726,16 +726,20 @@ h3 {
 
 /* Specific adjustments for metadata modal to fix button cutoff */
 #metadata-modal .metadata-form-grid {
-  gap: 6px; /* Reduced from 8px */
-  margin-bottom: 8px; /* Reduced from 12px */
-}
-
-#metadata-modal .form-group {
+  gap: 4px; /* Further reduced from 6px */
   margin-bottom: 6px; /* Reduced from 8px */
 }
 
+#metadata-modal .form-group {
+  margin-bottom: 4px; /* Further reduced from 6px */
+}
+
 #metadata-modal .modal-buttons {
-  margin-top: 8px; /* Reduced from 12px */
+  margin-top: 6px; /* Reduced from 8px */
+}
+
+#metadata-modal .form-group label {
+  margin-bottom: 2px; /* Reduced from 4px */
 }
 
 /* Make metadata modal buttons taller and properly center text */
@@ -768,4 +772,35 @@ h3 {
 
 .close-doi-modal:hover {
   color: #555;
+}
+
+/* Metadata management button styles */
+#clear-all-metadata-btn {
+  background-color: #e74c3c !important;
+}
+
+#clear-all-metadata-btn:hover {
+  background-color: #c0392b !important;
+}
+
+#clear-all-metadata-btn:disabled {
+  background-color: #bdc3c7 !important;
+}
+
+/* Metadata info section styling */
+#metadata-info {
+  margin-top: 4px; /* Reduced spacing */
+}
+
+#metadata-info .metadata-source-info {
+  border: 1px solid #e0e0e0;
+  background: #f9f9f9;
+  padding: 6px 8px; /* Reduced padding */
+  border-radius: 4px;
+  font-size: 0.82em; /* Slightly smaller font */
+  line-height: 1.2; /* Tighter line height */
+}
+
+#metadata-info .metadata-source-info div {
+  margin: 1px 0; /* Reduced margin between items */
 }
