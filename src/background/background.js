@@ -876,51 +876,80 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 const accessDateShort = `${String(today.getMonth() + 1).padStart(2, '0')}/${String(today.getDate()).padStart(2, '0')}/${today.getFullYear()}`;
                 const authorFormats = formatAuthors(metadata.author, settings.format);
                 
-                // Check if URL should be replaced with database name
-                let displayUrl = url;
-                const hostname = new URL(url).hostname;
-                const normalizedHostname = hostname.replace(/[-_.]/g, '');
-                
-                // Check for HeinOnline domains
-                const heinDomains = ['heinonline.org', 'www.heinonline.org'];
-                const normalizedHeinDomains = heinDomains.map(d => d.replace(/[-_.]/g, ''));
-                
-                let isHeinDomain = false;
-                if (heinDomains.includes(hostname)) {
-                  isHeinDomain = true;
-                } else {
-                  // Check normalized/proxied versions
-                  for (const normalizedHein of normalizedHeinDomains) {
-                    if (normalizedHostname.includes(normalizedHein)) {
-                      isHeinDomain = true;
-                      break;
+                // Helper function to replace URL based on citation settings
+                const replaceUrl = (originalUrl, metadata, settings) => {
+                  // Priority 1: Replace with DOI if enabled and available
+                  if (settings.replaceUrlWithDoi && metadata.doi) {
+                    return metadata.doi.startsWith('http') ? metadata.doi : `https://doi.org/${metadata.doi}`;
+                  }
+                  
+                  // Priority 2: Replace with database name if enabled
+                  if (settings.replaceDatabaseUrls) {
+                    const hostname = new URL(originalUrl).hostname;
+                    
+                    // Built-in database mappings
+                    const builtInDatabases = {
+                      'heinonline.org': 'HeinOnline',
+                      'www.heinonline.org': 'HeinOnline',
+                      'advance.lexis.com': 'Lexis',
+                      'www.lexis.com': 'Lexis', 
+                      'lexisnexis.com': 'Lexis',
+                      'www.lexisnexis.com': 'Lexis',
+                      'jstor.org': 'JSTOR',
+                      'www.jstor.org': 'JSTOR'
+                    };
+                    
+                    // Check built-in databases first
+                    if (builtInDatabases[hostname]) {
+                      return builtInDatabases[hostname];
+                    }
+                    
+                    // Check normalized/proxied versions for built-in databases
+                    const normalizedHostname = hostname.replace(/[-_.]/g, '');
+                    for (const [domain, dbName] of Object.entries(builtInDatabases)) {
+                      const normalizedDomain = domain.replace(/[-_.]/g, '');
+                      if (normalizedHostname.includes(normalizedDomain)) {
+                        return dbName;
+                      }
+                    }
+                    
+                    // Check custom database domains
+                    if (settings.customDatabaseDomains) {
+                      const customMappings = settings.customDatabaseDomains
+                        .split(/[,\n]/)
+                        .map(mapping => mapping.trim())
+                        .filter(mapping => mapping.includes('|'))
+                        .map(mapping => {
+                          const [domain, name] = mapping.split('|').map(s => s.trim());
+                          return { domain, name };
+                        });
+                      
+                      for (const { domain, name } of customMappings) {
+                        // Exact match first
+                        if (hostname === domain) {
+                          return name;
+                        }
+                        
+                        // Proxy detection using normalized comparison
+                        const normalizedDomain = domain.replace(/[-_.]/g, '');
+                        if (normalizedHostname.includes(normalizedDomain)) {
+                          return name;
+                        }
+                        
+                        // Also check hyphenated versions (common in EZProxy)
+                        const hyphenatedDomain = domain.replace(/\./g, '-');
+                        if (hostname.includes(hyphenatedDomain)) {
+                          return name;
+                        }
+                      }
                     }
                   }
-                }
+                  
+                  // Return original URL if no replacements apply
+                  return originalUrl;
+                };
                 
-                // Check for Lexis domains
-                const lexisDomains = ['advance.lexis.com', 'www.lexis.com', 'lexisnexis.com', 'www.lexisnexis.com'];
-                const normalizedLexisDomains = lexisDomains.map(d => d.replace(/[-_.]/g, ''));
-                
-                let isLexisDomain = false;
-                if (lexisDomains.includes(hostname)) {
-                  isLexisDomain = true;
-                } else {
-                  // Check normalized/proxied versions
-                  for (const normalizedLexis of normalizedLexisDomains) {
-                    if (normalizedHostname.includes(normalizedLexis)) {
-                      isLexisDomain = true;
-                      break;
-                    }
-                  }
-                }
-                
-                // Replace URL with database name if applicable
-                if (isHeinDomain) {
-                  displayUrl = 'HeinOnline';
-                } else if (isLexisDomain) {
-                  displayUrl = 'Lexis';
-                }
+                const displayUrl = replaceUrl(url, metadata, settings);
                 
                 // Helper function to format pages field
                 const formatPages = (pages) => {
@@ -1214,6 +1243,9 @@ function pauseRecording() {
     [STORAGE_KEYS.LAST_SAVE_TIMESTAMP]: Date.now()
   });
   
+  // Update badge to show yellow "REC" when paused
+  updateBadge();
+  
   // We don't change isRecording, just pause event collection
 }
 
@@ -1225,6 +1257,9 @@ function resumeRecording() {
     [STORAGE_KEYS.CURRENT_SESSION]: currentSession,
     [STORAGE_KEYS.LAST_SAVE_TIMESTAMP]: Date.now()
   });
+  
+  // Update badge to show red "REC" when resumed
+  updateBadge();
 }
 
 // Autosave functionality using alarms
@@ -1371,6 +1406,14 @@ function updateBadge(inactiveTimeMs = 0) {
   if (!isRecording) {
     // Clear badge when not recording
     chrome.action.setBadgeText({ text: '' });
+    return;
+  }
+  
+  // Check if recording is paused
+  if (currentSession && currentSession.isPaused) {
+    // Recording but paused - show "REC" in yellow
+    chrome.action.setBadgeText({ text: 'REC' });
+    chrome.action.setBadgeBackgroundColor({ color: '#F57C00' }); // Amber/Orange
     return;
   }
   

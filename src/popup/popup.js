@@ -76,6 +76,9 @@ let customFormatSection;
 let customFormatTemplate;
 let citationPreviewEnabled;
 let excludedDomainsInput;
+let replaceUrlWithDoiCheckbox;
+let replaceDatabaseUrlsCheckbox;
+let customDatabaseDomainsInput;
 let saveSettingsBtn;
 let cancelSettingsBtn;
 let exportAllMetadataBtn;
@@ -100,7 +103,10 @@ let citationSettings = {
   format: 'apa', 
   customTemplate: '', 
   previewEnabled: false, 
-  excludedDomains: 'annas-archive.org, libgen.is, sci-hub.se, library.dartmouth.edu' 
+  excludedDomains: 'annas-archive.org, libgen.is, sci-hub.se, library.dartmouth.edu',
+  replaceUrlWithDoi: false,
+  replaceDatabaseUrls: false,
+  customDatabaseDomains: ''
 };
 
 // Modal management system
@@ -277,6 +283,9 @@ function init() {
   customFormatTemplate = document.getElementById('custom-format-template');
   citationPreviewEnabled = document.getElementById('citation-preview-enabled');
   excludedDomainsInput = document.getElementById('excluded-domains');
+  replaceUrlWithDoiCheckbox = document.getElementById('replace-url-with-doi');
+  replaceDatabaseUrlsCheckbox = document.getElementById('replace-database-urls');
+  customDatabaseDomainsInput = document.getElementById('custom-database-domains');
   saveSettingsBtn = document.getElementById('save-settings-btn');
   cancelSettingsBtn = document.getElementById('cancel-settings-btn');
   exportAllMetadataBtn = document.getElementById('export-all-metadata-btn');
@@ -2164,6 +2173,79 @@ function generateCitation(metadata, url, format, customTemplate) {
     return trimmed;
   };
   
+  // Helper function to replace URL based on citation settings
+  const replaceUrl = (originalUrl, metadata, settings) => {
+    // Priority 1: Replace with DOI if enabled and available
+    if (settings.replaceUrlWithDoi && metadata.doi) {
+      return metadata.doi.startsWith('http') ? metadata.doi : `https://doi.org/${metadata.doi}`;
+    }
+    
+    // Priority 2: Replace with database name if enabled
+    if (settings.replaceDatabaseUrls) {
+      const hostname = new URL(originalUrl).hostname;
+      
+      // Built-in database mappings
+      const builtInDatabases = {
+        'heinonline.org': 'HeinOnline',
+        'www.heinonline.org': 'HeinOnline',
+        'advance.lexis.com': 'Lexis',
+        'www.lexis.com': 'Lexis', 
+        'lexisnexis.com': 'Lexis',
+        'www.lexisnexis.com': 'Lexis',
+        'jstor.org': 'JSTOR',
+        'www.jstor.org': 'JSTOR'
+      };
+      
+      // Check built-in databases first
+      if (builtInDatabases[hostname]) {
+        return builtInDatabases[hostname];
+      }
+      
+      // Check normalized/proxied versions for built-in databases
+      const normalizedHostname = hostname.replace(/[-_.]/g, '');
+      for (const [domain, dbName] of Object.entries(builtInDatabases)) {
+        const normalizedDomain = domain.replace(/[-_.]/g, '');
+        if (normalizedHostname.includes(normalizedDomain)) {
+          return dbName;
+        }
+      }
+      
+      // Check custom database domains
+      if (settings.customDatabaseDomains) {
+        const customMappings = settings.customDatabaseDomains
+          .split(/[,\n]/)
+          .map(mapping => mapping.trim())
+          .filter(mapping => mapping.includes('|'))
+          .map(mapping => {
+            const [domain, name] = mapping.split('|').map(s => s.trim());
+            return { domain, name };
+          });
+        
+        for (const { domain, name } of customMappings) {
+          // Exact match first
+          if (hostname === domain) {
+            return name;
+          }
+          
+          // Proxy detection using normalized comparison
+          const normalizedDomain = domain.replace(/[-_.]/g, '');
+          if (normalizedHostname.includes(normalizedDomain)) {
+            return name;
+          }
+          
+          // Also check hyphenated versions (common in EZProxy)
+          const hyphenatedDomain = domain.replace(/\./g, '-');
+          if (hostname.includes(hyphenatedDomain)) {
+            return name;
+          }
+        }
+      }
+    }
+    
+    // Return original URL if no replacements apply
+    return originalUrl;
+  };
+  
   // Prepare variables
   const variables = {
     author: authorFormats.full,
@@ -2181,7 +2263,7 @@ function generateCitation(metadata, url, format, customTemplate) {
     pages: formatPages(metadata.pages),
     doi: metadata.doi || '',
     quals: metadata.quals || '',
-    url: url,
+    url: replaceUrl(url, metadata, citationSettings),
     accessDate: accessDate,
     accessDateShort: accessDateShort
   };
@@ -2263,6 +2345,9 @@ function loadCitationSettings() {
         customTemplate: '',
         previewEnabled: false,
         excludedDomains: 'annas-archive.org, libgen.is, sci-hub.se, library.dartmouth.edu',
+        replaceUrlWithDoi: false,
+        replaceDatabaseUrls: false,
+        customDatabaseDomains: '',
         ...result.citationSettings
       };
     }
@@ -2272,6 +2357,9 @@ function loadCitationSettings() {
     customFormatTemplate.value = citationSettings.customTemplate || '';
     citationPreviewEnabled.checked = citationSettings.previewEnabled || false;
     excludedDomainsInput.value = citationSettings.excludedDomains || 'annas-archive.org, libgen.is, sci-hub.se, library.dartmouth.edu';
+    replaceUrlWithDoiCheckbox.checked = citationSettings.replaceUrlWithDoi || false;
+    replaceDatabaseUrlsCheckbox.checked = citationSettings.replaceDatabaseUrls || false;
+    customDatabaseDomainsInput.value = citationSettings.customDatabaseDomains || '';
     
     if (citationSettings.format === 'custom') {
       customFormatSection.style.display = 'block';
@@ -2286,6 +2374,9 @@ function saveCitationSettings() {
   citationSettings.customTemplate = customFormatTemplate.value;
   citationSettings.previewEnabled = citationPreviewEnabled.checked;
   citationSettings.excludedDomains = excludedDomainsInput.value;
+  citationSettings.replaceUrlWithDoi = replaceUrlWithDoiCheckbox.checked;
+  citationSettings.replaceDatabaseUrls = replaceDatabaseUrlsCheckbox.checked;
+  citationSettings.customDatabaseDomains = customDatabaseDomainsInput.value;
   
   chrome.storage.local.set({ citationSettings }, () => {
     console.log('Citation settings saved');

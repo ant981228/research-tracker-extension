@@ -271,6 +271,34 @@
                 Domains to exclude from research tracking (comma-separated). These pages won't be logged as visited content.
               </div>
             </div>
+            
+            <div class="form-group">
+              <label for="replace-url-with-doi" style="cursor: pointer;">
+                Replace URL with DOI in citations:
+                <input type="checkbox" id="replace-url-with-doi"> 
+              </label>
+              <div class="setting-description">
+                When checked, citations will use DOI instead of URL if a DOI is available for the page.
+              </div>
+            </div>
+            
+            <div class="form-group">
+              <label for="replace-database-urls" style="cursor: pointer;">
+                Replace database URLs:
+                <input type="checkbox" id="replace-database-urls"> 
+              </label>
+              <div class="setting-description">
+                When checked, URLs from academic databases (like JSTOR, HeinOnline, Lexis) will be replaced with database names in citations.
+              </div>
+            </div>
+            
+            <div class="form-group">
+              <label for="custom-database-domains">Custom Database Domains:</label>
+              <textarea id="custom-database-domains" rows="3" style="width: 100%; box-sizing: border-box;" placeholder="example.edu|Custom Database Name, another.edu|Another Database"></textarea>
+              <div class="setting-description">
+                Custom domains for database URL replacement (format: domain|Database Name, one per line or comma-separated).
+              </div>
+            </div>
           </div>
           
           <div class="settings-section">

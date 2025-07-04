@@ -14,13 +14,13 @@ Research Tracker helps you document your research process by automatically track
 ## Features
 
 ### 🔍 Search Tracking
-- Captures searches from Google, Google Scholar, Bing, DuckDuckGo, and Google News
+- Captures searches from Google, Google Scholar, Bing, DuckDuckGo, Google News, and LexisNexis
 - Records search queries, parameters, and timestamps
 - Links searches to pages visited from search results
 
 ### 📄 Page Visit Tracking
 - Records all pages visited during research sessions
-- Extracts metadata using site-specific extractors for 30+ academic, news, and research sites
+- Extracts metadata using site-specific extractors for 140+ academic, news, and research sites
 - Captures standard metadata (title, author, date) from any website
 - Maintains the relationship between searches and discovered content
 
@@ -28,6 +28,21 @@ Research Tracker helps you document your research process by automatically track
 - Add notes to any page or search
 - Notes are timestamped and associated with their context
 - Export includes all notes with their relationships preserved
+
+### 📋 Citation Generation
+- Generate formatted citations in APA, MLA, Chicago, Harvard, and IEEE styles
+- Custom citation template support with extensive variable substitution
+- Copy citations to clipboard with keyboard shortcuts
+- Optional floating citation preview on web pages
+- Smart formatting: automatic "pp." prefix for page numbers
+- Configurable URL replacement: use DOI instead of URLs, replace database URLs with database names
+
+### ⚙️ Metadata Management
+- Edit and enhance page metadata through keyboard shortcuts (Ctrl/Cmd+1-8)
+- Manual metadata editing with automatic extraction protection
+- DOI-based metadata enhancement from external APIs
+- Pending edits preservation across popup sessions
+- Cross-session metadata persistence
 
 ### 💾 Export Options
 - **JSON format**: Structured data for programmatic processing
@@ -52,7 +67,13 @@ Research Tracker helps you document your research process by automatically track
 ### During Research
 - The extension automatically tracks your searches and page visits
 - Click the extension icon and use "Add Note" to annotate the current page
-- The recording indicator shows your session is active
+- **Recording Status Indicators:**
+  - Red "REC" badge: Active recording
+  - Yellow "REC" badge: Recording paused
+  - No badge: Not recording
+  - Red badge with time (e.g., "5m"): Recording but inactive for 5+ minutes
+- Use keyboard shortcuts to quickly set metadata from selected text
+- Copy citations with Ctrl+Q or use the citation preview for quick access
 
 ### Ending a Session
 1. Click the extension icon
@@ -64,6 +85,25 @@ Research Tracker helps you document your research process by automatically track
 - Click "View Past Sessions" to see all recorded sessions
 - Export any session at any time
 - Delete sessions you no longer need
+
+### Keyboard Shortcuts
+- **Ctrl/Cmd+0**: Auto-fill metadata from DOI in selected text
+- **Ctrl/Cmd+1**: Set author from selected text
+- **Ctrl/Cmd+2**: Set quals from selected text
+- **Ctrl/Cmd+3**: Set date from selected text
+- **Ctrl/Cmd+4**: Set title from selected text
+- **Ctrl/Cmd+5**: Set journal from selected text
+- **Ctrl/Cmd+6**: Set publication info from selected text
+- **Ctrl/Cmd+7**: Set pages from selected text
+- **Ctrl/Cmd+8**: Set DOI from selected text
+- **Ctrl+Q**: Copy citation for current page
+
+### Settings & Configuration
+- **Citation Settings**: Choose citation format (APA, MLA, Chicago, Harvard, IEEE, or custom)
+- **Citation Preview**: Enable/disable floating citation preview on web pages
+- **URL Replacement**: Replace URLs with DOIs or database names in citations
+- **Custom Database Domains**: Add your own database domain mappings
+- **Excluded Domains**: Specify domains to exclude from research tracking
 
 ### Additional Utilities
 
@@ -176,6 +216,9 @@ Enhanced metadata extraction for:
 - Milken Institute, Third Way
 - Competitive Enterprise Institute (CEI)
 - R Street Institute, Aspen Institute
+
+**Legal Research:**
+- LexisNexis - Legal documents and case law
 
 **Social Media & Forums:**
 - Reddit - Subreddit posts and comments
