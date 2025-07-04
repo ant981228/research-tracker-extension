@@ -5248,6 +5248,17 @@ function generateCitationPreview(metadata, url, title, settings) {
     displayUrl = 'Lexis';
   }
   
+  // Helper function to format pages field
+  const formatPages = (pages) => {
+    if (!pages || pages.trim() === '') return '';
+    const trimmed = pages.trim();
+    // Check if first and last characters are digits
+    if (/^\d/.test(trimmed) && /\d$/.test(trimmed)) {
+      return `pp. ${trimmed}`;
+    }
+    return trimmed;
+  };
+  
   const variables = {
     author: authorFormats.full,
     authorShort: authorFormats.short,
@@ -5260,7 +5271,7 @@ function generateCitationPreview(metadata, url, title, settings) {
     title: metadata.title || title || 'Untitled',
     journal: metadata.journal || '',
     publicationInfo: metadata.publicationInfo || '',
-    pages: metadata.pages || '',
+    pages: formatPages(metadata.pages),
     doi: metadata.doi || '',
     quals: metadata.quals || '',
     url: displayUrl,

@@ -2153,6 +2153,17 @@ function generateCitation(metadata, url, format, customTemplate) {
   
   const authorFormats = formatAuthors(metadata.author, format);
   
+  // Helper function to format pages field
+  const formatPages = (pages) => {
+    if (!pages || pages.trim() === '') return '';
+    const trimmed = pages.trim();
+    // Check if first and last characters are digits
+    if (/^\d/.test(trimmed) && /\d$/.test(trimmed)) {
+      return `pp. ${trimmed}`;
+    }
+    return trimmed;
+  };
+  
   // Prepare variables
   const variables = {
     author: authorFormats.full,
@@ -2167,7 +2178,7 @@ function generateCitation(metadata, url, format, customTemplate) {
     publisher: metadata.publisher || metadata.journal || new URL(url).hostname.replace('www.', ''),
     journal: metadata.journal || '',
     publicationInfo: metadata.publicationInfo || '',
-    pages: metadata.pages || '',
+    pages: formatPages(metadata.pages),
     doi: metadata.doi || '',
     quals: metadata.quals || '',
     url: url,

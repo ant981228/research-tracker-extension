@@ -922,6 +922,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                   displayUrl = 'Lexis';
                 }
                 
+                // Helper function to format pages field
+                const formatPages = (pages) => {
+                  if (!pages || pages.trim() === '') return '';
+                  const trimmed = pages.trim();
+                  // Check if first and last characters are digits
+                  if (/^\d/.test(trimmed) && /\d$/.test(trimmed)) {
+                    return `pp. ${trimmed}`;
+                  }
+                  return trimmed;
+                };
+                
                 const variables = {
                   author: authorFormats.full,
                   authorShort: authorFormats.short,
@@ -935,7 +946,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                   publisher: metadata.publisher || metadata.journal || new URL(url).hostname.replace('www.', ''),
                   journal: metadata.journal || '',
                   publicationInfo: metadata.publicationInfo || '',
-                  pages: metadata.pages || '',
+                  pages: formatPages(metadata.pages),
                   doi: metadata.doi || '',
                   quals: metadata.quals || '',
                   url: displayUrl,
