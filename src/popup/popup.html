@@ -88,18 +88,28 @@
             </div>
             
             <div class="form-group">
-              <label for="metadata-publisher">Publisher/Source:</label>
-              <input type="text" id="metadata-publisher" placeholder="Publisher or website name">
-            </div>
-            
-            <div class="form-group">
               <label for="metadata-journal">Journal:</label>
               <input type="text" id="metadata-journal" placeholder="Journal name (if applicable)">
             </div>
             
             <div class="form-group">
+              <label for="metadata-publication-info">Publication Info:</label>
+              <input type="text" id="metadata-publication-info" placeholder="Volume, issue, etc. (e.g., Vol. 15, No. 3)">
+            </div>
+            
+            <div class="form-group">
+              <label for="metadata-pages">Pages:</label>
+              <input type="text" id="metadata-pages" placeholder="Page range (e.g., 123-145)">
+            </div>
+            
+            <div class="form-group">
               <label for="metadata-doi">DOI:</label>
               <input type="text" id="metadata-doi" placeholder="10.xxxx/xxxxx">
+            </div>
+            
+            <div class="form-group">
+              <label for="metadata-quals">Quals:</label>
+              <textarea id="metadata-quals" rows="2" placeholder="Enter qualification information (optional)"></textarea>
             </div>
             
             <div class="form-group">
@@ -116,11 +126,6 @@
                 <option value="website">Website</option>
                 <option value="other">Other</option>
               </select>
-            </div>
-            
-            <div class="form-group full-width">
-              <label for="metadata-quals">Quals:</label>
-              <textarea id="metadata-quals" rows="2" placeholder="Enter qualification information (optional)"></textarea>
             </div>
             
             <div class="form-group full-width" id="metadata-info">
@@ -233,7 +238,7 @@
             
             <div id="custom-format-section" class="form-group" style="display: none;">
               <label for="custom-format-template">Custom Citation Template:</label>
-              <textarea id="custom-format-template" rows="4" style="width: 100%; box-sizing: border-box;" placeholder="{authorShort} {yearShort}, {quals}, &quot;{title},&quot; {publisher}, {date}, {url}"></textarea>
+              <textarea id="custom-format-template" rows="4" style="width: 100%; box-sizing: border-box;" placeholder="{authorShort} {yearShort}, {quals}, &quot;{title},&quot; {journal}, {publicationInfo}, {pages}, {date}, {url}"></textarea>
               <div class="template-help">
                 <p><strong>Available variables:</strong></p>
                 <ul>
@@ -246,15 +251,16 @@
                   <li><code>{day}</code> - Publication day (DD)</li>
                   <li><code>{date}</code> - Publication date (MM/DD/YYYY)</li>
                   <li><code>{title}</code> - Page/article title</li>
-                  <li><code>{publisher}</code> - Publisher or website name</li>
-                  <li><code>{journal}</code> - Journal name</li>
+                  <li><code>{journal}</code> - Journal or source name</li>
+                  <li><code>{publicationInfo}</code> - Volume, issue info (e.g., Vol. 15, No. 3)</li>
+                  <li><code>{pages}</code> - Page range (e.g., 123-145)</li>
                   <li><code>{doi}</code> - Digital Object Identifier</li>
                   <li><code>{url}</code> - Page URL</li>
                   <li><code>{accessDate}</code> - Today's date</li>
                   <li><code>{accessDateShort}</code> - Today's date (MM/DD/YYYY)</li>
                   <li><code>{quals}</code> - Qualification information</li>
                 </ul>
-                <p><strong>Example:</strong> {authorShort} {yearShort}, {quals}, "{title}," {publisher}, {date}, {url}</p>
+                <p><strong>Example:</strong> {authorShort} {yearShort}, {quals}, "{title}," {journal}, {publicationInfo}, {pages}, {date}, {url}</p>
               </div>
             </div>
             
@@ -302,9 +308,10 @@
               <li><code>Ctrl/Cmd+2</code> - Set quals from selected text</li>
               <li><code>Ctrl/Cmd+3</code> - Set date from selected text</li>
               <li><code>Ctrl/Cmd+4</code> - Set title from selected text</li>
-              <li><code>Ctrl/Cmd+5</code> - Set publisher from selected text</li>
-              <li><code>Ctrl/Cmd+6</code> - Set journal from selected text</li>
-              <li><code>Ctrl/Cmd+7</code> - Set DOI from selected text</li>
+              <li><code>Ctrl/Cmd+5</code> - Set journal from selected text</li>
+              <li><code>Ctrl/Cmd+6</code> - Set publication info from selected text</li>
+              <li><code>Ctrl/Cmd+7</code> - Set pages from selected text</li>
+              <li><code>Ctrl/Cmd+8</code> - Set DOI from selected text</li>
               <li><code>Ctrl+Q</code> - Copy citation for current page</li>
             </ul>
           </div>

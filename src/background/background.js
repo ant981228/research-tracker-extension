@@ -334,16 +334,33 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             
             // Check if this is a manual update (from popup) vs automatic
             const isManualUpdate = message.isManualUpdate || false;
+            const isAutomaticUpdate = message.isAutomaticUpdate || false;
+            
+            // Get or create metadata object
+            const { id: metadataId, metadataObj } = await getOrCreateMetadataObject(message.url);
+            
+            // Protect manual edits from automatic updates
+            if (isAutomaticUpdate && metadataObj.metadata.manuallyEdited) {
+              console.log('Skipping automatic update - metadata was manually edited');
+              sendResponse({ success: false, error: 'Manual edits protected from automatic updates' });
+              return;
+            }
             
             let metadataToUpdate = message.metadata;
+            
+            // Add manual edit flags for manual updates
+            if (isManualUpdate) {
+              metadataToUpdate = {
+                ...metadataToUpdate,
+                manuallyEdited: true,
+                editTimestamp: new Date().toISOString()
+              };
+            }
             
             // Only enhance with DOI if not a manual update and not already from DOI
             if (!isManualUpdate && !message.metadata.doiMetadata) {
               metadataToUpdate = await enhanceMetadataWithDOI(message.url, message.metadata);
             }
-            
-            // Get or create metadata object
-            const { id: metadataId } = await getOrCreateMetadataObject(message.url);
             
             // Update the metadata object
             await updateMetadataObject(metadataId, metadataToUpdate);
@@ -366,13 +383,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       (async () => {
         try {
           if (message.url) {
-            // Only process if recording is active
-            if (!isRecording) {
-              console.log('Not recording, returning empty metadata');
-              sendResponse({ success: false, error: 'Not recording', metadata: {} });
-              return;
-            }
-            
             const normalizedUrl = normalizeUrl(message.url);
             
             // Fast lookup using URL index
@@ -737,11 +747,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 // This function runs in the content script context
                 // We need to recreate the citation generation logic here
                 const citationFormats = {
-                  apa: '{author} ({year}). {title}. {publisher}. {url ? "Retrieved {accessDate} from {url}" : ""}',
-                  mla: '{author}. "{title}." {publisher}, {day} {month} {year}, {url}.',
-                  chicago: '{author}. "{title}." {publisher}, {month} {day}, {year}. {url}.',
-                  harvard: '{author} {year}, {title}, {publisher}, viewed {accessDate}, <{url}>.',
-                  ieee: '{author}, "{title}," {publisher}, {year}. [Online]. Available: {url}. [Accessed: {accessDate}].'
+                  apa: '{author} ({year}). {title}. {journal}, {publicationInfo}, {pages}. {url ? "Retrieved {accessDate} from {url}" : ""}',
+                  mla: '{author}. "{title}." {journal}, {publicationInfo}, {pages}, {day} {month} {year}, {url}.',
+                  chicago: '{author}. "{title}." {journal}, {publicationInfo}, {pages}, {month} {day}, {year}. {url}.',
+                  harvard: '{author} {year}, {title}, {journal}, {publicationInfo}, {pages}, viewed {accessDate}, <{url}>.',
+                  ieee: '{author}, "{title}," {journal}, {publicationInfo}, {pages}, {year}. [Online]. Available: {url}. [Accessed: {accessDate}].'
                 };
                 
                 // Helper functions (simplified versions)
@@ -924,6 +934,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                   title: metadata.title || title || 'Untitled',
                   publisher: metadata.publisher || metadata.journal || new URL(url).hostname.replace('www.', ''),
                   journal: metadata.journal || '',
+                  publicationInfo: metadata.publicationInfo || '',
+                  pages: metadata.pages || '',
                   doi: metadata.doi || '',
                   quals: metadata.quals || '',
                   url: displayUrl,
@@ -938,8 +950,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                   citation = citation.replace(new RegExp(`{${key}}`, 'g'), value || '');
                 });
                 
+                // Clean up formatting
                 citation = citation.replace(/\s+/g, ' ').trim();
                 citation = citation.replace(/\s+([.,])/g, '$1');
+                
+                // Clean up multiple commas and empty sections
+                citation = citation.replace(/,\s*,/g, ','); // Remove double commas
+                citation = citation.replace(/,\s*\./g, '.'); // Remove comma before period
+                citation = citation.replace(/,\s*$/, ''); // Remove trailing comma
+                citation = citation.replace(/\.\s*,/g, '.'); // Remove comma after period
                 
                 // Check for missing fields
                 const missingFields = [];
@@ -1445,20 +1464,20 @@ function handleNavigationCompleted(details) {
         // Get or create metadata object first
         const { id: metadataId, metadataObj } = await getOrCreateMetadataObject(tab.url);
         
-        // If metadata object already has metadata, don't re-extract
-        if (Object.keys(metadataObj.metadata).length > 0) {
-          console.log('Metadata already exists for URL, skipping extraction:', tab.url);
+        // If metadata object already has metadata or was manually edited, don't re-extract
+        if (Object.keys(metadataObj.metadata).length > 0 || metadataObj.metadata.manuallyEdited) {
+          console.log('Metadata already exists or was manually edited for URL, skipping extraction:', tab.url);
           return;
         }
         
         chrome.tabs.sendMessage(details.tabId, { action: 'extractMetadata' }, async (response) => {
           if (chrome.runtime.lastError || !response) return;
           
-          // Enhance metadata with DOI if available
-          const enhancedMetadata = await enhanceMetadataWithDOI(details.url, response.metadata);
+          // Process metadata with new DOI-first approach
+          const finalMetadata = await processMetadataWithDOIPriority(details.url, response.metadata);
           
-          // Update metadata object with enhanced metadata
-          await updatePageVisitMetadata(details.url, enhancedMetadata);
+          // Update metadata object with processed metadata
+          await updatePageVisitMetadata(details.url, finalMetadata);
         });
       }
     });
@@ -1846,43 +1865,99 @@ async function updatePageVisitMetadata(url, metadata) {
 // DOI detection and metadata fetching
 function extractDOIFromURL(url) {
   try {
-    // Common DOI patterns in URLs
+    // Common DOI patterns in URLs - based on comprehensive research
     const patterns = [
-      // doi.org URLs (including dx.doi.org)
-      /(?:dx\.)?doi\.org\/(10\.\d{4,}(?:\.\d+)*\/[^\s?#]+)/i,
+      // Standard DOI URLs (including dx.doi.org and various mirror sites)
+      /(?:(?:https?:\/\/)?(?:(?:dx|www)\.)?doi\.org\/)(10\.\d{4,9}\/[-._;()/:a-zA-Z0-9]+)/i,
       
-      // URLs with doi parameter
-      /[?&]doi=(10\.\d{4,}[^&\s]+)/i,
+      // URLs with doi parameter (various formats)
+      /[?&]doi=(10\.\d{4,9}\/[-._;()/:a-zA-Z0-9]+)[&\s]?/i,
+      /[?&]DOI=(10\.\d{4,9}\/[-._;()/:a-zA-Z0-9]+)[&\s]?/i,
+      /[?&]id=doi:(10\.\d{4,9}\/[-._;()/:a-zA-Z0-9]+)[&\s]?/i,
+      
+      // Publisher-specific patterns
       
       // Wiley Online Library
-      /\/doi\/(?:abs|full|pdf|epdf)\/(10\.\d{4,}\/[^\s?#]+)/i,
+      /onlinelibrary\.wiley\.com\/doi\/(?:abs|full|pdf|epdf)\/(10\.\d{4,9}\/[-._;()/:a-zA-Z0-9]+)/i,
       
-      // Springer
-      /\/article\/(10\.\d{4,}\/[^\s?#]+)/i,
+      // Springer (various formats)
+      /link\.springer\.com\/article\/(10\.\d{4,9}\/[-._;()/:a-zA-Z0-9]+)/i,
+      /link\.springer\.com\/chapter\/(10\.\d{4,9}\/[-._;()/:a-zA-Z0-9]+)/i,
+      /link\.springer\.com\/book\/(10\.\d{4,9}\/[-._;()/:a-zA-Z0-9]+)/i,
+      
+      // Nature Publishing Group
+      /nature\.com\/articles\/(10\.\d{4,9}\/[-._;()/:a-zA-Z0-9]+)/i,
+      
+      // ScienceDirect/Elsevier
+      /sciencedirect\.com\/science\/article\/[^/]*\/(10\.\d{4,9}\/[-._;()/:a-zA-Z0-9]+)/i,
       
       // PLOS journals
-      /\/article\?id=(10\.\d{4,}\/[^&\s]+)/i,
+      /journals\.plos\.org\/[^/]+\/article\?id=(10\.\d{4,9}\/[-._;()/:a-zA-Z0-9]+)/i,
       
       // JSTOR
-      /stable\/(10\.\d{4,}\/[^\s?#]+)/i,
+      /jstor\.org\/stable\/(10\.\d{4,9}\/[-._;()/:a-zA-Z0-9]+)/i,
       
-      // IEEE Xplore
-      /\/document\/\d+.*[?&]arnumber=\d+/i, // Note: IEEE uses different system
+      // SAGE Publications
+      /journals\.sagepub\.com\/doi\/(?:abs|full|pdf)\/(10\.\d{4,9}\/[-._;()/:a-zA-Z0-9]+)/i,
       
-      // Generic DOI in path (must be last as it's most general)
-      /\/(10\.\d{4,}(?:\.\d+)*\/[-._;()\/:A-Za-z0-9]+)/
+      // Taylor & Francis
+      /tandfonline\.com\/doi\/(?:abs|full|pdf)\/(10\.\d{4,9}\/[-._;()/:a-zA-Z0-9]+)/i,
+      
+      // Oxford Academic
+      /academic\.oup\.com\/[^/]+\/article\/[^/]*\/(10\.\d{4,9}\/[-._;()/:a-zA-Z0-9]+)/i,
+      
+      // Cambridge Core
+      /cambridge\.org\/core\/journals\/[^/]+\/article\/[^/]*\/(10\.\d{4,9}\/[-._;()/:a-zA-Z0-9]+)/i,
+      
+      // MDPI
+      /mdpi\.com\/[^/]+\/[^/]+\/[^/]+\/[^/]*\/(10\.\d{4,9}\/[-._;()/:a-zA-Z0-9]+)/i,
+      
+      // Frontiers
+      /frontiersin\.org\/articles\/(10\.\d{4,9}\/[-._;()/:a-zA-Z0-9]+)/i,
+      
+      // Hindawi
+      /hindawi\.com\/journals\/[^/]+\/[^/]*\/(10\.\d{4,9}\/[-._;()/:a-zA-Z0-9]+)/i,
+      
+      // BioMed Central
+      /biomedcentral\.com\/articles\/(10\.\d{4,9}\/[-._;()/:a-zA-Z0-9]+)/i,
+      
+      // PeerJ
+      /peerj\.com\/articles\/(10\.\d{4,9}\/[-._;()/:a-zA-Z0-9]+)/i,
+      
+      // arXiv (though arXiv doesn't use DOIs directly, some references include them)
+      /arxiv\.org\/[^/]*\/[^/]*(?:\?.*)?.*doi[=:]?(10\.\d{4,9}\/[-._;()/:a-zA-Z0-9]+)/i,
+      
+      // Generic DOI embedded in path (comprehensive pattern covering 97% of DOIs)
+      /\b(10\.\d{4,9}\/[-._;()/:a-zA-Z0-9]+)\b/,
+      
+      // Handle URL-encoded DOIs
+      /\b(10\.%[0-9A-F]{2}[0-9A-F%]*\/[-._;()/:a-zA-Z0-9%]+)\b/i
     ];
 
     for (const pattern of patterns) {
       const match = url.match(pattern);
-      if (match) {
+      if (match && match[1]) {
         // Clean up the DOI
         let doi = match[1];
+        
         // URL decode if needed
-        doi = decodeURIComponent(doi);
-        // Remove any trailing slashes or query params
-        doi = doi.replace(/[\/?#].*$/, '');
-        return doi;
+        try {
+          doi = decodeURIComponent(doi);
+        } catch (e) {
+          // If decode fails, use original
+        }
+        
+        // Remove any trailing punctuation that's not part of the DOI
+        doi = doi.replace(/[.,;:!?)\]}>]+$/, '');
+        
+        // Remove any query parameters or fragments that got captured
+        doi = doi.replace(/[?#].*$/, '');
+        
+        // Validate it looks like a proper DOI
+        if (/^10\.\d{4,9}\/[-._;()/:a-zA-Z0-9]+$/.test(doi)) {
+          console.log(`Extracted DOI from URL: ${doi}`);
+          return doi;
+        }
       }
     }
   } catch (e) {
@@ -1943,13 +2018,19 @@ async function fetchDOIMetadata(doi) {
       authors: [],
       publishDate: null,
       journal: data['container-title'],
-      volume: data.volume,
-      issue: data.issue,
+      publicationInfo: null, // Will be set below from volume/issue
       pages: data.page,
-      publisher: data.publisher,
       abstract: data.abstract,
       contentType: mapCSLTypeToContentType(data.type)
     };
+    
+    // Create publication info from volume and issue
+    if (data.volume || data.issue) {
+      const parts = [];
+      if (data.volume) parts.push(`Vol. ${data.volume}`);
+      if (data.issue) parts.push(`No. ${data.issue}`);
+      metadata.publicationInfo = parts.join(', ');
+    }
 
     // Process authors
     if (data.author && Array.isArray(data.author)) {
@@ -2050,6 +2131,77 @@ async function enhanceMetadataWithDOI(url, metadata) {
   } catch (e) {
     console.error('Error enhancing metadata with DOI:', e);
     return metadata;
+  }
+}
+
+// New DOI-first metadata processing function
+async function processMetadataWithDOIPriority(url, extractedMetadata) {
+  try {
+    console.log('Processing metadata with DOI priority for:', url);
+    
+    // Step 1: Check if content script found a DOI
+    let doi = extractedMetadata.doi;
+    let doiMetadata = null;
+    
+    // Step 2: If no DOI from content, try extracting from URL
+    if (!doi) {
+      console.log('No DOI from content script, trying URL extraction...');
+      doi = extractDOIFromURL(url);
+      if (doi) {
+        console.log(`DOI extracted from URL: ${doi}`);
+        extractedMetadata.doi = doi;
+      }
+    }
+    
+    // Step 3: If we have a DOI, fetch metadata from DOI API
+    if (doi) {
+      console.log(`Fetching DOI metadata for: ${doi}`);
+      doiMetadata = await fetchDOIMetadata(doi);
+      
+      if (doiMetadata) {
+        console.log('Successfully fetched DOI metadata, using it as primary source');
+        
+        // Use DOI metadata as primary source, fill gaps with extracted metadata
+        const finalMetadata = {
+          ...extractedMetadata, // Base metadata from page extraction
+          ...doiMetadata,       // DOI metadata takes precedence
+          
+          // Always preserve these from original
+          url: extractedMetadata.url || url,
+          timestamp: extractedMetadata.timestamp,
+          
+          // Fill gaps where DOI API didn't provide data
+          title: doiMetadata.title || extractedMetadata.title,
+          author: doiMetadata.author || extractedMetadata.author,
+          publishDate: doiMetadata.publishDate || doiMetadata.date || extractedMetadata.publishDate,
+          journal: doiMetadata.journal || extractedMetadata.journal,
+          publicationInfo: doiMetadata.publicationInfo || extractedMetadata.publicationInfo,
+          pages: doiMetadata.pages || extractedMetadata.pages,
+          contentType: doiMetadata.contentType || extractedMetadata.contentType,
+          
+          // Mark the extraction source priority
+          extractionSource: 'doi-primary',
+          doiApiSuccess: true
+        };
+        
+        console.log('Final metadata (DOI-primary):', finalMetadata);
+        return finalMetadata;
+      } else {
+        console.log('Failed to fetch DOI metadata, using extracted metadata with DOI');
+        extractedMetadata.extractionSource = 'extracted-with-doi';
+        extractedMetadata.doiApiSuccess = false;
+      }
+    } else {
+      console.log('No DOI found, using extracted metadata only');
+      extractedMetadata.extractionSource = 'extracted-only';
+    }
+    
+    // If no DOI or DOI fetch failed, return extracted metadata
+    return extractedMetadata;
+    
+  } catch (e) {
+    console.error('Error in processMetadataWithDOIPriority:', e);
+    return extractedMetadata;
   }
 }
 

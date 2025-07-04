@@ -30,9 +30,10 @@ let metadataModal;
 let metadataTitle;
 let metadataAuthor;
 let metadataDate;
-let metadataPublisher;
 let metadataType;
 let metadataJournal;
+let metadataPublicationInfo;
+let metadataPages;
 let metadataDoi;
 let metadataQuals;
 let metadataInfo;
@@ -228,9 +229,10 @@ function init() {
   metadataTitle = document.getElementById('metadata-title');
   metadataAuthor = document.getElementById('metadata-author');
   metadataDate = document.getElementById('metadata-date');
-  metadataPublisher = document.getElementById('metadata-publisher');
   metadataType = document.getElementById('metadata-type');
   metadataJournal = document.getElementById('metadata-journal');
+  metadataPublicationInfo = document.getElementById('metadata-publication-info');
+  metadataPages = document.getElementById('metadata-pages');
   metadataDoi = document.getElementById('metadata-doi');
   metadataQuals = document.getElementById('metadata-quals');
   metadataInfo = document.getElementById('metadata-info');
@@ -1371,9 +1373,10 @@ function openMetadataModal() {
   metadataTitle.value = '';
   metadataAuthor.value = '';
   metadataDate.value = '';
-  metadataPublisher.value = '';
   metadataType.value = '';
   metadataJournal.value = '';
+  metadataPublicationInfo.value = '';
+  metadataPages.value = '';
   metadataDoi.value = '';
   metadataQuals.value = '';
   metadataInfo.innerHTML = '';
@@ -1402,9 +1405,10 @@ function openMetadataModal() {
       }
       
       metadataDate.value = currentPageMetadata.publishDate || '';
-      metadataPublisher.value = currentPageMetadata.publisher || '';
       metadataType.value = currentPageMetadata.contentType || '';
       metadataJournal.value = currentPageMetadata.journal || '';
+      metadataPublicationInfo.value = currentPageMetadata.publicationInfo || '';
+      metadataPages.value = currentPageMetadata.pages || '';
       metadataDoi.value = currentPageMetadata.doi || '';
       metadataQuals.value = currentPageMetadata.quals || '';
       
@@ -1433,9 +1437,10 @@ function saveMetadata() {
     title: metadataTitle.value.trim(),
     author: metadataAuthor.value.trim(),
     publishDate: metadataDate.value.trim(),
-    publisher: metadataPublisher.value.trim(),
     contentType: metadataType.value,
     journal: metadataJournal.value.trim(),
+    publicationInfo: metadataPublicationInfo.value.trim(),
+    pages: metadataPages.value.trim(),
     doi: metadataDoi.value.trim(),
     quals: metadataQuals.value.trim(),
     manuallyEdited: true,
@@ -1621,8 +1626,9 @@ function fillMetadataForm(metadata) {
   if (metadata.title) metadataTitle.value = metadata.title;
   if (metadata.author) metadataAuthor.value = metadata.author;
   if (metadata.publishDate) metadataDate.value = metadata.publishDate;
-  if (metadata.publisher) metadataPublisher.value = metadata.publisher;
   if (metadata.journal) metadataJournal.value = metadata.journal;
+  if (metadata.publicationInfo) metadataPublicationInfo.value = metadata.publicationInfo;
+  if (metadata.pages) metadataPages.value = metadata.pages;
   if (metadata.doi) metadataDoi.value = metadata.doi;
   if (metadata.contentType) metadataType.value = metadata.contentType;
   if (metadata.abstract) metadataQuals.value = metadata.abstract;
@@ -1755,13 +1761,13 @@ function togglePopout() {
 }
 */
 
-// Citation format templates
+// Citation format templates - matches citation preview exactly
 const citationFormats = {
-  apa: '{author} ({year}). {title}. {publisher}. {url ? "Retrieved {accessDate} from {url}" : ""}',
-  mla: '{author}. "{title}." {publisher}, {day} {month} {year}, {url}.',
-  chicago: '{author}. "{title}." {publisher}, {month} {day}, {year}. {url}.',
-  harvard: '{author} {year}, {title}, {publisher}, viewed {accessDate}, <{url}>.',
-  ieee: '{author}, "{title}," {publisher}, {year}. [Online]. Available: {url}. [Accessed: {accessDate}].'
+  apa: '{author} ({year}). {title}. {journal}, {publicationInfo}, {pages}. {url ? "Retrieved {accessDate} from {url}" : ""}',
+  mla: '{author}. "{title}." {journal}, {publicationInfo}, {pages}, {day} {month} {year}, {url}.',
+  chicago: '{author}. "{title}." {journal}, {publicationInfo}, {pages}, {month} {day}, {year}. {url}.',
+  harvard: '{author} {year}, {title}, {journal}, {publicationInfo}, {pages}, viewed {accessDate}, <{url}>.',
+  ieee: '{author}, "{title}," {journal}, {publicationInfo}, {pages}, {year}. [Online]. Available: {url}. [Accessed: {accessDate}].'
 };
 
 // Function to format date parts
@@ -1923,6 +1929,8 @@ function generateCitation(metadata, url, format, customTemplate) {
     title: metadata.title || 'Untitled',
     publisher: metadata.publisher || metadata.journal || new URL(url).hostname.replace('www.', ''),
     journal: metadata.journal || '',
+    publicationInfo: metadata.publicationInfo || '',
+    pages: metadata.pages || '',
     doi: metadata.doi || '',
     quals: metadata.quals || '',
     url: url,
@@ -1941,9 +1949,15 @@ function generateCitation(metadata, url, format, customTemplate) {
     citation = citation.replace(new RegExp(`{${key}}`, 'g'), value || '');
   });
   
-  // Clean up any remaining empty spaces
+  // Clean up formatting
   citation = citation.replace(/\s+/g, ' ').trim();
   citation = citation.replace(/\s+([.,])/g, '$1');
+  
+  // Clean up multiple commas and empty sections
+  citation = citation.replace(/,\s*,/g, ','); // Remove double commas
+  citation = citation.replace(/,\s*\./g, '.'); // Remove comma before period
+  citation = citation.replace(/,\s*$/, ''); // Remove trailing comma
+  citation = citation.replace(/\.\s*,/g, '.'); // Remove comma after period
   
   return citation;
 }

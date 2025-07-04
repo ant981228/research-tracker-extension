@@ -217,6 +217,160 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   return true; // Keep the message channel open for async responses
 });
 
+// Extract DOI from HTML page content
+function extractDOIFromPageContent() {
+  try {
+    // Check various meta tag formats for DOI
+    const doiSelectors = [
+      // Highwire Press format (most common)
+      'meta[name="citation_doi"]',
+      'meta[name="DC.identifier"][content*="doi:"]',
+      'meta[name="DC.Identifier"][content*="doi:"]',
+      'meta[name="dc.identifier"][content*="doi:"]',
+      
+      // Eprints format
+      'meta[name="eprints.doi"]',
+      'meta[name="eprints.id_number"][content*="doi:"]',
+      
+      // Dublin Core formats
+      'meta[name="DC.identifier.doi"]',
+      'meta[name="dc.identifier.doi"]',
+      
+      // Other variations
+      'meta[name="doi"]',
+      'meta[name="DOI"]',
+      'meta[property="article:doi"]',
+      'meta[property="citation_doi"]',
+      'meta[name="prism.doi"]',
+      'meta[name="bepress_citation_doi"]'
+    ];
+    
+    // Try each selector
+    for (const selector of doiSelectors) {
+      const element = document.querySelector(selector);
+      if (element) {
+        let content = element.getAttribute('content');
+        if (content) {
+          // Clean up the DOI - remove common prefixes
+          content = content.replace(/^(doi:|DOI:|https?:\/\/(dx\.)?doi\.org\/)/i, '');
+          
+          // Validate it looks like a DOI
+          const doiPattern = /^10\.\d{4,9}\/[-._;()/:a-zA-Z0-9]+$/;
+          if (doiPattern.test(content)) {
+            console.log(`Found DOI in meta tag ${selector}: ${content}`);
+            return content;
+          }
+        }
+      }
+    }
+    
+    // Check JSON-LD structured data for DOI
+    const jsonLdScripts = document.querySelectorAll('script[type="application/ld+json"]');
+    for (const script of jsonLdScripts) {
+      try {
+        const data = JSON.parse(script.textContent);
+        const doi = findDOIInJsonLd(data);
+        if (doi) {
+          console.log(`Found DOI in JSON-LD: ${doi}`);
+          return doi;
+        }
+      } catch (e) {
+        // Continue to next script if parsing fails
+      }
+    }
+    
+    // Check microdata for DOI
+    const microdataElements = document.querySelectorAll('[itemtype*="schema.org"], [itemtype*="ScholarlyArticle"], [itemtype*="Article"]');
+    for (const element of microdataElements) {
+      const doiElement = element.querySelector('[itemprop="identifier"], [itemprop="doi"], [itemprop="sameAs"]');
+      if (doiElement) {
+        const content = doiElement.getAttribute('content') || doiElement.textContent;
+        if (content) {
+          const cleanContent = content.replace(/^(doi:|DOI:|https?:\/\/(dx\.)?doi\.org\/)/i, '');
+          if (/^10\.\d{4,9}\/[-._;()/:a-zA-Z0-9]+$/.test(cleanContent)) {
+            console.log(`Found DOI in microdata: ${cleanContent}`);
+            return cleanContent;
+          }
+        }
+      }
+    }
+    
+    // Last resort: search page text for DOI patterns
+    const bodyText = document.body ? document.body.textContent : '';
+    const doiMatches = bodyText.match(/\b(10\.\d{4,9}\/[-._;()/:a-zA-Z0-9]+)\b/g);
+    if (doiMatches && doiMatches.length > 0) {
+      // Return the first valid DOI found
+      for (const match of doiMatches) {
+        if (/^10\.\d{4,9}\/[-._;()/:a-zA-Z0-9]+$/.test(match)) {
+          console.log(`Found DOI in page text: ${match}`);
+          return match;
+        }
+      }
+    }
+    
+  } catch (e) {
+    console.error('Error extracting DOI from page content:', e);
+  }
+  
+  return null;
+}
+
+// Helper function to recursively search JSON-LD data for DOI
+function findDOIInJsonLd(data) {
+  if (!data) return null;
+  
+  // Check if data is an array
+  if (Array.isArray(data)) {
+    for (const item of data) {
+      const doi = findDOIInJsonLd(item);
+      if (doi) return doi;
+    }
+    return null;
+  }
+  
+  // Check if data is an object
+  if (typeof data === 'object') {
+    // Direct DOI properties
+    const doiProps = ['doi', 'DOI', 'identifier', 'sameAs', '@id'];
+    for (const prop of doiProps) {
+      if (data[prop]) {
+        let value = data[prop];
+        if (Array.isArray(value)) {
+          for (const v of value) {
+            const doi = extractDOIFromValue(v);
+            if (doi) return doi;
+          }
+        } else {
+          const doi = extractDOIFromValue(value);
+          if (doi) return doi;
+        }
+      }
+    }
+    
+    // Recursively check other properties
+    for (const key in data) {
+      if (key !== '@context' && key !== '@type') {
+        const doi = findDOIInJsonLd(data[key]);
+        if (doi) return doi;
+      }
+    }
+  }
+  
+  return null;
+}
+
+// Helper function to extract DOI from a value
+function extractDOIFromValue(value) {
+  if (typeof value === 'string') {
+    // Remove common prefixes
+    const cleaned = value.replace(/^(doi:|DOI:|https?:\/\/(dx\.)?doi\.org\/)/i, '');
+    if (/^10\.\d{4,9}\/[-._;()/:a-zA-Z0-9]+$/.test(cleaned)) {
+      return cleaned;
+    }
+  }
+  return null;
+}
+
 // Extract basic metadata from any page
 function extractPageMetadata() {
   try {
@@ -224,6 +378,22 @@ function extractPageMetadata() {
       url: window.location.href,
       timestamp: new Date().toISOString()
     };
+    
+    // STEP 1: Try to detect DOI first (highest priority)
+    console.log('Step 1: Attempting DOI detection...');
+    let doi = extractDOIFromPageContent();
+    
+    // If we found a DOI, mark it in metadata and indicate we should try DOI API
+    if (doi) {
+      metadata.doi = doi;
+      metadata.shouldFetchDOIMetadata = true;
+      console.log(`DOI detected: ${doi}. Will attempt to fetch metadata from DOI API.`);
+    } else {
+      console.log('No DOI found in page content.');
+    }
+    
+    // STEP 2: Extract metadata using site-specific or generic extractors
+    console.log('Step 2: Extracting metadata using site-specific/generic extractors...');
     
     // Check if we have a site-specific extractor for this domain
     const hostname = window.location.hostname;
@@ -869,22 +1039,22 @@ function extractSchemaMetadata(metadata) {
             }
           }
           
-          // Extract publisher
-          if (!metadata.publisher) {
+          // Extract publisher/journal info
+          if (!metadata.journal) {
             if (effectiveData.publisher) {
               if (typeof effectiveData.publisher === 'string') {
-                metadata.publisher = effectiveData.publisher;
+                metadata.journal = effectiveData.publisher;
               } else if (effectiveData.publisher.name) {
-                metadata.publisher = effectiveData.publisher.name;
+                metadata.journal = effectiveData.publisher.name;
               } else if (effectiveData.publisher.brand && effectiveData.publisher.brand.name) {
-                metadata.publisher = effectiveData.publisher.brand.name;
+                metadata.journal = effectiveData.publisher.brand.name;
               }
             } else if (effectiveData.sourceOrganization) {
               // Sometimes publisher is in sourceOrganization
               if (typeof effectiveData.sourceOrganization === 'string') {
-                metadata.publisher = effectiveData.sourceOrganization;
+                metadata.journal = effectiveData.sourceOrganization;
               } else if (effectiveData.sourceOrganization.name) {
-                metadata.publisher = effectiveData.sourceOrganization.name;
+                metadata.journal = effectiveData.sourceOrganization.name;
               }
             }
           }
@@ -922,7 +1092,7 @@ function extractSchemaMetadata(metadata) {
           }
           
           // If we found all the main data, break out for efficiency
-          if (metadata.title && metadata.author && metadata.publishDate && metadata.publisher) {
+          if (metadata.title && metadata.author && metadata.publishDate && metadata.journal) {
             break;
           }
         } catch (e) {
@@ -1011,45 +1181,45 @@ function extractSocialMediaMetadata(metadata) {
       }
     }
     
-    // Publisher extraction
-    if (!metadata.publisher) {
+    // Journal/Source extraction
+    if (!metadata.journal) {
       // Open Graph site name is the most common source
       const siteName = document.querySelector('meta[property="og:site_name"]');
       if (siteName && siteName.getAttribute('content')) {
-        metadata.publisher = siteName.getAttribute('content');
+        metadata.journal = siteName.getAttribute('content');
       }
       
       // Twitter site
-      if (!metadata.publisher) {
+      if (!metadata.journal) {
         const twitterSite = document.querySelector('meta[name="twitter:site:name"], meta[name="twitter:site"]');
         if (twitterSite && twitterSite.getAttribute('content')) {
           const site = twitterSite.getAttribute('content');
           // Don't use Twitter handles as publishers (they start with @)
           if (site && !site.startsWith('@')) {
-            metadata.publisher = site;
+            metadata.journal = site;
           }
         }
       }
       
       // Try application name as a fallback
-      if (!metadata.publisher) {
+      if (!metadata.journal) {
         const appName = document.querySelector('meta[name="application-name"]');
         if (appName && appName.getAttribute('content')) {
-          metadata.publisher = appName.getAttribute('content');
+          metadata.journal = appName.getAttribute('content');
         }
       }
       
       // Last resort: extract from domain
-      if (!metadata.publisher) {
+      if (!metadata.journal) {
         try {
           const domain = window.location.hostname;
-          // Convert domain to publisher name (remove TLD and www)
+          // Convert domain to journal name (remove TLD and www)
           let domainParts = domain.split('.');
           if (domainParts.length >= 2) {
-            let publisherName = domainParts[domainParts.length - 2];
+            let journalName = domainParts[domainParts.length - 2];
             // Clean up and capitalize
-            publisherName = publisherName.charAt(0).toUpperCase() + publisherName.slice(1);
-            metadata.publisher = publisherName;
+            journalName = journalName.charAt(0).toUpperCase() + journalName.slice(1);
+            metadata.journal = journalName;
           }
         } catch (e) {
           // Ignore domain parsing errors
@@ -1523,7 +1693,7 @@ function extractArxivMetadata() {
     
     // Content type
     metadata.contentType = 'preprint';
-    metadata.publisher = 'arXiv';
+    metadata.journal = 'arXiv';
     
   } catch (e) {
     console.error('Error in arXiv extractor:', e);
@@ -1604,7 +1774,10 @@ function extractPubMedMetadata() {
     
     // Content type
     metadata.contentType = 'journal-article';
-    metadata.publisher = 'PubMed';
+    // Set PubMed as fallback journal if no specific journal was found
+    if (!metadata.journal) {
+      metadata.journal = 'PubMed';
+    }
     
   } catch (e) {
     console.error('Error in PubMed extractor:', e);
@@ -1714,7 +1887,7 @@ function extractJstorMetadata() {
               }
             }
             if (data.datePublished && !metadata.publishDate) metadata.publishDate = data.datePublished;
-            if (data.publisher && !metadata.publisher) metadata.publisher = data.publisher.name || data.publisher;
+            if (data.publisher && !metadata.journal) metadata.journal = data.publisher.name || data.publisher;
             if (data.description && !metadata.description) metadata.description = data.description;
           }
         } catch (e) {
@@ -1724,7 +1897,10 @@ function extractJstorMetadata() {
     }
     
     metadata.contentType = 'journal-article';
-    if (!metadata.publisher) metadata.publisher = 'JSTOR';
+    // Set JSTOR as fallback journal if no specific journal was found
+    if (!metadata.journal) {
+      metadata.journal = 'JSTOR';
+    }
     
   } catch (e) {
     console.error('Error in JSTOR extractor:', e);
@@ -1858,7 +2034,7 @@ function extractNYTimesMetadata() {
     metadata.hasPaywall = !!paywallEl;
     
     metadata.contentType = 'news-article';
-    metadata.publisher = 'The New York Times';
+    metadata.journal = 'The New York Times';
     
   } catch (e) {
     console.error('Error in NYTimes extractor:', e);
@@ -1897,7 +2073,7 @@ function extractWashingtonPostMetadata() {
     }
     
     metadata.contentType = 'news-article';
-    metadata.publisher = 'The Washington Post';
+    metadata.journal = 'The Washington Post';
     
   } catch (e) {
     console.error('Error in Washington Post extractor:', e);
@@ -1932,7 +2108,7 @@ function extractWSJMetadata() {
     }
     
     metadata.contentType = 'news-article';
-    metadata.publisher = 'The Wall Street Journal';
+    metadata.journal = 'The Wall Street Journal';
     metadata.hasPaywall = true; // WSJ typically has paywall
     
   } catch (e) {
@@ -1959,7 +2135,7 @@ function extractBloombergMetadata() {
     
     // Set standard fields
     metadata.contentType = 'news-article';
-    metadata.publisher = 'Bloomberg';
+    metadata.journal = 'Bloomberg';
     metadata.hasPaywall = true; // Bloomberg typically has paywall
     
   } catch (e) {
@@ -2041,7 +2217,7 @@ function extractGuardianMetadata() {
     }
     
     metadata.contentType = 'news-article';
-    metadata.publisher = 'The Guardian';
+    metadata.journal = 'The Guardian';
     
   } catch (e) {
     console.error('Error in Guardian extractor:', e);
@@ -2084,7 +2260,7 @@ function extractBBCMetadata() {
     }
     
     metadata.contentType = 'news-article';
-    metadata.publisher = 'BBC';
+    metadata.journal = 'BBC';
     
   } catch (e) {
     console.error('Error in BBC extractor:', e);
@@ -2125,7 +2301,7 @@ function extractCNNMetadata() {
     }
     
     metadata.contentType = 'news-article';
-    metadata.publisher = 'CNN';
+    metadata.journal = 'CNN';
     
   } catch (e) {
     console.error('Error in CNN extractor:', e);
@@ -2149,7 +2325,7 @@ function extractABCNewsMetadata() {
     
     // Set standard fields
     metadata.contentType = 'news-article';
-    metadata.publisher = 'ABC News';
+    metadata.journal = 'ABC News';
     
   } catch (e) {
     console.error('Error in ABC News extractor:', e);
@@ -2184,7 +2360,7 @@ function extractNBCNewsMetadata() {
     
     // Set standard fields
     metadata.contentType = 'news-article';
-    metadata.publisher = 'NBC News';
+    metadata.journal = 'NBC News';
     
   } catch (e) {
     console.error('Error in NBC News extractor:', e);
@@ -2221,7 +2397,7 @@ function extractCBSNewsMetadata() {
     
     // Set standard fields
     metadata.contentType = 'news-article';
-    metadata.publisher = 'CBS News';
+    metadata.journal = 'CBS News';
     
     // If no author found, use CBS News as author
     if (!metadata.author) {
@@ -2251,7 +2427,7 @@ function extractCNBCMetadata() {
     
     // Set standard fields
     metadata.contentType = 'news-article';
-    metadata.publisher = 'CNBC';
+    metadata.journal = 'CNBC';
     
   } catch (e) {
     console.error('Error in CNBC extractor:', e);
@@ -2307,7 +2483,7 @@ function extractLATimesMetadata() {
     
     // Set standard fields
     metadata.contentType = 'news-article';
-    metadata.publisher = 'Los Angeles Times';
+    metadata.journal = 'Los Angeles Times';
     
   } catch (e) {
     console.error('Error in LA Times extractor:', e);
@@ -2359,7 +2535,7 @@ function extractReutersMetadata() {
     
     // Set standard fields
     metadata.contentType = 'news-article';
-    metadata.publisher = 'Reuters';
+    metadata.journal = 'Reuters';
     
   } catch (e) {
     console.error('Error in Reuters extractor:', e);
@@ -2465,7 +2641,10 @@ function extractScienceDirectMetadata() {
     }
     
     metadata.contentType = 'journal-article';
-    metadata.publisher = 'Elsevier';
+    // Set Elsevier as fallback journal if no specific journal was found
+    if (!metadata.journal) {
+      metadata.journal = 'Elsevier';
+    }
     
   } catch (e) {
     console.error('Error in ScienceDirect extractor:', e);
@@ -2544,7 +2723,10 @@ function extractNatureMetadata() {
     }
     
     metadata.contentType = 'journal-article';
-    metadata.publisher = 'Nature Publishing Group';
+    // Set Nature as fallback journal if no specific journal was found
+    if (!metadata.journal) {
+      metadata.journal = 'Nature';
+    }
     
   } catch (e) {
     console.error('Error in Nature extractor:', e);
@@ -2606,7 +2788,10 @@ function extractSpringerMetadata() {
       metadata.contentType = 'journal-article'; // Default fallback
     }
     
-    metadata.publisher = 'Springer';
+    // Set Springer as fallback journal if no specific journal was found
+    if (!metadata.journal) {
+      metadata.journal = 'Springer';
+    }
     
   } catch (e) {
     console.error('Error in Springer extractor:', e);
@@ -2659,7 +2844,10 @@ function extractWileyMetadata() {
     }
     
     metadata.contentType = 'journal-article';
-    metadata.publisher = 'Wiley';
+    // Set Wiley as fallback journal if no specific journal was found
+    if (!metadata.journal) {
+      metadata.journal = 'Wiley';
+    }
     
   } catch (e) {
     console.error('Error in Wiley extractor:', e);
@@ -2712,7 +2900,7 @@ function extractRedditMetadata() {
     }
     
     metadata.contentType = 'social-media-post';
-    metadata.publisher = 'Reddit';
+    metadata.journal = 'Reddit';
     
   } catch (e) {
     console.error('Error in Reddit extractor:', e);
@@ -2759,7 +2947,7 @@ function extractTwitterMetadata() {
     }
     
     metadata.contentType = 'social-media-post';
-    metadata.publisher = 'Twitter/X';
+    metadata.journal = 'Twitter/X';
     
   } catch (e) {
     console.error('Error in Twitter extractor:', e);
@@ -2823,7 +3011,7 @@ function extractBrookingsMetadata() {
     }
     
     metadata.contentType = 'report';
-    metadata.publisher = 'Brookings Institution';
+    metadata.journal = 'Brookings Institution';
     
   } catch (e) {
     console.error('Error in Brookings extractor:', e);
@@ -2910,7 +3098,7 @@ function extractRandMetadata() {
     }
     
     metadata.contentType = 'report';
-    metadata.publisher = 'RAND Corporation';
+    metadata.journal = 'RAND Corporation';
     
   } catch (e) {
     console.error('Error in RAND extractor:', e);
@@ -2959,7 +3147,7 @@ function extractPewMetadata() {
     }
     
     metadata.contentType = 'report';
-    metadata.publisher = 'Pew Research Center';
+    metadata.journal = 'Pew Research Center';
     
   } catch (e) {
     console.error('Error in Pew Research extractor:', e);
@@ -3013,7 +3201,7 @@ function extractWikipediaMetadata() {
     }
     
     metadata.contentType = 'encyclopedia-article';
-    metadata.publisher = 'Wikipedia';
+    metadata.journal = 'Wikipedia';
     metadata.isOpenAccess = true;
     
   } catch (e) {
@@ -3091,7 +3279,7 @@ function extractArcticResearchMetadata() {
     
     // Set content type and publisher
     metadata.contentType = 'website';
-    metadata.publisher = 'Arctic Research';
+    metadata.journal = 'Arctic Research';
     
   } catch (e) {
     console.error('Error in Arctic Research extractor:', e);
@@ -3109,7 +3297,7 @@ function extractArcticNewsMetadata() {
     metadata.author = 'Sam Carana';
     metadata.authors = ['Sam Carana'];
     metadata.contentType = 'website';
-    metadata.publisher = 'Arctic News';
+    metadata.journal = 'Arctic News';
     
     // Do not attempt to fill in the date as specified
     // Title will be handled by generic extractors
@@ -3196,7 +3384,7 @@ function extractMongabayMetadata() {
     }
     
     metadata.contentType = 'news-article';
-    metadata.publisher = 'Mongabay';
+    metadata.journal = 'Mongabay';
     
   } catch (e) {
     console.error('Error in Mongabay extractor:', e);
@@ -3256,7 +3444,7 @@ function extractHighNorthNewsMetadata() {
     
     // Let generic extractors handle title, date, etc.
     metadata.contentType = 'news-article';
-    metadata.publisher = 'High North News';
+    metadata.journal = 'High North News';
     
   } catch (e) {
     console.error('Error in High North News extractor:', e);
@@ -3352,8 +3540,8 @@ function extractLexisNexisMetadata() {
       }
     }
     
-    // Always set publisher to "Lexis" regardless of what we found
-    metadata.publisher = 'Lexis';
+    // Always set journal to "Lexis" regardless of what we found
+    metadata.journal = 'Lexis';
     
     // Set content type based on what we found in the title/publisher
     if (metadata.title) {
@@ -3406,7 +3594,7 @@ function extractCatoMetadata() {
     
     // Set content type and publisher
     metadata.contentType = 'website';
-    metadata.publisher = 'Cato Institute';
+    metadata.journal = 'Cato Institute';
     
     // Let generic extractors handle title, date, etc.
     
@@ -3477,7 +3665,7 @@ function extractCSISMetadata() {
     
     // Set content type and publisher
     metadata.contentType = 'website';
-    metadata.publisher = 'Center for Strategic and International Studies';
+    metadata.journal = 'Center for Strategic and International Studies';
     
   } catch (e) {
     console.error('Error in CSIS extractor:', e);
@@ -3521,7 +3709,7 @@ function extractCarnegieMetadata() {
     
     // Set content type and publisher
     metadata.contentType = 'website';
-    metadata.publisher = 'Carnegie Endowment for International Peace';
+    metadata.journal = 'Carnegie Endowment for International Peace';
     
   } catch (e) {
     console.error('Error in Carnegie Endowment extractor:', e);
@@ -3561,7 +3749,7 @@ function extractHeritageMetadata() {
     
     // Set content type and publisher
     metadata.contentType = 'website';
-    metadata.publisher = 'The Heritage Foundation';
+    metadata.journal = 'The Heritage Foundation';
     
   } catch (e) {
     console.error('Error in Heritage Foundation extractor:', e);
@@ -3602,7 +3790,7 @@ function extractUrbanMetadata() {
     
     // Set content type and publisher
     metadata.contentType = 'report';
-    metadata.publisher = 'Urban Institute';
+    metadata.journal = 'Urban Institute';
     
   } catch (e) {
     console.error('Error in Urban Institute extractor:', e);
@@ -3625,7 +3813,7 @@ function extractTaxPolicyCenterMetadata() {
     
     // Set content type and publisher
     metadata.contentType = 'website';
-    metadata.publisher = 'Tax Policy Center';
+    metadata.journal = 'Tax Policy Center';
     
     // Let generic extractors handle title, date, etc.
     
@@ -3687,7 +3875,7 @@ function extractAmericanProgressMetadata() {
     
     // Set content type and publisher
     metadata.contentType = 'website';
-    metadata.publisher = 'Center for American Progress';
+    metadata.journal = 'Center for American Progress';
     
   } catch (e) {
     console.error('Error in American Progress extractor:', e);
@@ -3758,7 +3946,7 @@ function extractAtlanticCouncilMetadata() {
     
     // Set content type and publisher
     metadata.contentType = 'website';
-    metadata.publisher = 'Atlantic Council';
+    metadata.journal = 'Atlantic Council';
     
   } catch (e) {
     console.error('Error in Atlantic Council extractor:', e);
@@ -3840,7 +4028,7 @@ function extractHudsonMetadata() {
     
     // Set content type and publisher
     metadata.contentType = 'website';
-    metadata.publisher = 'Hudson Institute';
+    metadata.journal = 'Hudson Institute';
     
   } catch (e) {
     console.error('Error in Hudson Institute extractor:', e);
@@ -3890,7 +4078,7 @@ function extractCNASMetadata() {
     
     // Set content type and publisher
     metadata.contentType = 'website';
-    metadata.publisher = 'Center for a New American Security';
+    metadata.journal = 'Center for a New American Security';
     
     // Let generic extractors handle title, date, etc.
     
@@ -3951,7 +4139,7 @@ function extractBakerInstituteMetadata() {
     
     // Set content type and publisher
     metadata.contentType = 'report'; // Baker Institute typically publishes research reports
-    metadata.publisher = 'Baker Institute for Public Policy';
+    metadata.journal = 'Baker Institute for Public Policy';
     
     // Let generic extractors handle title and other fields
     
@@ -4031,7 +4219,7 @@ function extractRFFMetadata() {
     
     // Set content type and publisher
     metadata.contentType = 'report'; // RFF typically publishes research reports and policy briefs
-    metadata.publisher = 'Resources for the Future';
+    metadata.journal = 'Resources for the Future';
     
     // Let generic extractors handle title, date, and other fields
     
@@ -4141,7 +4329,7 @@ function extractHooverMetadata() {
     
     // Set content type and publisher
     metadata.contentType = 'report'; // Hoover Institution typically publishes research and policy papers
-    metadata.publisher = 'Hoover Institution';
+    metadata.journal = 'Hoover Institution';
     
     // Let generic extractors handle any remaining fields
     
@@ -4370,12 +4558,20 @@ async function updateCurrentPageMetadata(field, value) {
       };
     }
     
+    // Add manual edit flags for keyboard shortcut updates
+    const metadataWithFlags = {
+      ...updatedMetadata,
+      manuallyEdited: true,
+      editTimestamp: new Date().toISOString()
+    };
+
     // Send the complete metadata object back
     const updateResponse = await new Promise((resolve) => {
       chrome.runtime.sendMessage({
         action: 'updatePageMetadata',
         url: url,
-        metadata: updatedMetadata
+        metadata: metadataWithFlags,
+        isManualUpdate: true  // Critical flag to prevent automatic overwrites
       }, resolve);
     });
     
@@ -4407,8 +4603,8 @@ document.addEventListener('keydown', async (e) => {
   
   console.log(`Research Tracker: Key pressed:`, e.key, `${modifierName}:`, modifierKey, 'Shift:', e.shiftKey, 'Alt:', e.altKey);
   
-  // Check for Cmd/Ctrl+[0-7]
-  if (modifierKey && !e.shiftKey && !e.altKey && ((e.key >= '1' && e.key <= '7') || e.key === '0')) {
+  // Check for Cmd/Ctrl+[0-8]
+  if (modifierKey && !e.shiftKey && !e.altKey && ((e.key >= '1' && e.key <= '8') || e.key === '0')) {
     console.log(`Research Tracker: ${modifierName}+${e.key} detected`);
     e.preventDefault();
     e.stopPropagation();
@@ -4468,17 +4664,22 @@ document.addEventListener('keydown', async (e) => {
         parsedValue = parseTitle(selectedText);
         break;
         
-      case '5': // Publisher
-        field = 'publisher';
-        parsedValue = originalValue; // Just trim
-        break;
-        
-      case '6': // Journal (moved from 5)
+      case '5': // Journal
         field = 'journal';
         parsedValue = originalValue; // Just trim
         break;
         
-      case '7': // DOI (moved from 6)
+      case '6': // Publication Info
+        field = 'publicationInfo';
+        parsedValue = originalValue; // Just trim
+        break;
+        
+      case '7': // Pages
+        field = 'pages';
+        parsedValue = originalValue; // Just trim
+        break;
+        
+      case '8': // DOI
         field = 'doi';
         parsedValue = parseDOI(selectedText);
         break;
@@ -4519,8 +4720,9 @@ document.addEventListener('keydown', async (e) => {
             if (metadata.title) updates.title = metadata.title;
             if (metadata.author) updates.author = metadata.author;
             if (metadata.publishDate) updates.publishDate = metadata.publishDate;
-            if (metadata.publisher) updates.publisher = metadata.publisher;
             if (metadata.journal) updates.journal = metadata.journal;
+            if (metadata.publicationInfo) updates.publicationInfo = metadata.publicationInfo;
+            if (metadata.pages) updates.pages = metadata.pages;
             if (metadata.doi) updates.doi = metadata.doi;
             if (metadata.abstract) updates.quals = metadata.abstract;
             if (metadata.contentType) updates.contentType = metadata.contentType;
@@ -4591,7 +4793,7 @@ const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
 const modifierName = isMac ? 'Cmd' : 'Ctrl';
 console.log('Research Tracker: Keyboard shortcuts initialized.');
 console.log(`  ${modifierName}+1: Author | ${modifierName}+2: Quals | ${modifierName}+3: Date`);
-console.log(`  ${modifierName}+4: Title | ${modifierName}+5: Publisher | ${modifierName}+6: Journal | ${modifierName}+7: DOI`);
+console.log(`  ${modifierName}+4: Title | ${modifierName}+5: Journal | ${modifierName}+6: Publication Info | ${modifierName}+7: Pages | ${modifierName}+8: DOI`);
 console.log(`  Ctrl+q: Copy citation for current page`);
 
 // ===== CITATION PREVIEW FUNCTIONALITY =====
@@ -4843,11 +5045,11 @@ async function updateCitationPreview() {
 function generateCitationPreview(metadata, url, title, settings) {
   // Reuse the same citation generation logic from background.js
   const citationFormats = {
-    apa: '{author} ({year}). {title}. {publisher}. {url ? "Retrieved {accessDate} from {url}" : ""}',
-    mla: '{author}. "{title}." {publisher}, {day} {month} {year}, {url}.',
-    chicago: '{author}. "{title}." {publisher}, {month} {day}, {year}. {url}.',
-    harvard: '{author} {year}, {title}, {publisher}, viewed {accessDate}, <{url}>.',
-    ieee: '{author}, "{title}," {publisher}, {year}. [Online]. Available: {url}. [Accessed: {accessDate}].'
+    apa: '{author} ({year}). {title}. {journal}, {publicationInfo}, {pages}. {url ? "Retrieved {accessDate} from {url}" : ""}',
+    mla: '{author}. "{title}." {journal}, {publicationInfo}, {pages}, {day} {month} {year}, {url}.',
+    chicago: '{author}. "{title}." {journal}, {publicationInfo}, {pages}, {month} {day}, {year}. {url}.',
+    harvard: '{author} {year}, {title}, {journal}, {publicationInfo}, {pages}, viewed {accessDate}, <{url}>.',
+    ieee: '{author}, "{title}," {journal}, {publicationInfo}, {pages}, {year}. [Online]. Available: {url}. [Accessed: {accessDate}].'
   };
   
   const template = settings.format === 'custom' ? settings.customTemplate : citationFormats[settings.format];
@@ -5028,8 +5230,9 @@ function generateCitationPreview(metadata, url, title, settings) {
     day: dateParts.day,
     date: dateParts.date,
     title: metadata.title || title || 'Untitled',
-    publisher: metadata.publisher || metadata.journal || new URL(url).hostname.replace('www.', ''),
     journal: metadata.journal || '',
+    publicationInfo: metadata.publicationInfo || '',
+    pages: metadata.pages || '',
     doi: metadata.doi || '',
     quals: metadata.quals || '',
     url: displayUrl,
@@ -5044,8 +5247,15 @@ function generateCitationPreview(metadata, url, title, settings) {
     citation = citation.replace(new RegExp(`{${key}}`, 'g'), value || '');
   });
   
+  // Clean up formatting
   citation = citation.replace(/\s+/g, ' ').trim();
   citation = citation.replace(/\s+([.,])/g, '$1');
+  
+  // Clean up multiple commas and empty sections
+  citation = citation.replace(/,\s*,/g, ','); // Remove double commas
+  citation = citation.replace(/,\s*\./g, '.'); // Remove comma before period
+  citation = citation.replace(/,\s*$/, ''); // Remove trailing comma
+  citation = citation.replace(/\.\s*,/g, '.'); // Remove comma after period
   
   return citation;
 }
@@ -5065,14 +5275,29 @@ chrome.storage.local.get(['citationSettings'], (result) => {
 
 // Store extracted metadata automatically when page loads
 // This ensures metadata is available for citation even when not recording
-setTimeout(() => {
+setTimeout(async () => {
+  // First check if metadata already exists and was manually edited
+  const existingMetadata = await new Promise(resolve => {
+    chrome.runtime.sendMessage({
+      action: 'getPageMetadata',
+      url: window.location.href
+    }, resolve);
+  });
+
+  // Don't overwrite manual edits
+  if (existingMetadata?.metadata?.manuallyEdited) {
+    console.log('Research Tracker: Skipping auto-extraction - metadata was manually edited');
+    return;
+  }
+
   const extractedMetadata = extractPageMetadata();
   if (extractedMetadata && Object.keys(extractedMetadata).length > 0) {
     // Send to background script to store temporarily
     chrome.runtime.sendMessage({
       action: 'updatePageMetadata',
       url: window.location.href,
-      metadata: extractedMetadata
+      metadata: extractedMetadata,
+      isAutomaticUpdate: true // Flag to indicate this is automatic extraction
     }, (response) => {
       if (response && response.success) {
         console.log('Research Tracker: Page metadata auto-stored');
@@ -5121,15 +5346,15 @@ function extractNberMetadata() {
     // Extract publisher/institution
     const institutionMeta = document.querySelector('meta[name="citation_technical_report_institution"]');
     if (institutionMeta) {
-      metadata.publisher = institutionMeta.getAttribute('content').trim();
+      metadata.journal = institutionMeta.getAttribute('content').trim();
     }
     
     // Set content type and other standard fields
     metadata.contentType = 'report';
     
-    // Fallback publisher if not found in meta tag
-    if (!metadata.publisher) {
-      metadata.publisher = 'National Bureau of Economic Research';
+    // Fallback journal if not found in meta tag
+    if (!metadata.journal) {
+      metadata.journal = 'National Bureau of Economic Research';
     }
     
   } catch (e) {
@@ -5182,7 +5407,7 @@ function extractSSRNMetadata() {
     }
     
     // Set publisher and content type
-    metadata.publisher = 'SSRN';
+    metadata.journal = 'SSRN';
     metadata.contentType = 'preprint';
     
   } catch (e) {
@@ -5258,7 +5483,10 @@ function extractDukeUPressMetadata() {
     }
     
     // Set publisher and content type
-    metadata.publisher = 'Duke University Press';
+    // Set Duke University Press as fallback journal if no specific journal was found
+    if (!metadata.journal) {
+      metadata.journal = 'Duke University Press';
+    }
     metadata.contentType = 'journal-article';
     
   } catch (e) {
@@ -5317,7 +5545,10 @@ function extractSageMetadata() {
     }
     
     // Set publisher and content type
-    metadata.publisher = 'Sage Journals';
+    // Set Sage as fallback journal if no specific journal was found
+    if (!metadata.journal) {
+      metadata.journal = 'Sage Journals';
+    }
     metadata.contentType = 'journal-article';
     
   } catch (e) {
@@ -5385,7 +5616,7 @@ function extractReasonMetadata() {
     }
     
     // Set publisher and content type
-    metadata.publisher = 'Reason';
+    metadata.journal = 'Reason';
     metadata.contentType = 'article';
     
   } catch (e) {
@@ -5449,7 +5680,7 @@ function extractCBPPMetadata() {
     }
     
     // Set publisher and content type
-    metadata.publisher = 'Center on Budget and Policy Priorities';
+    metadata.journal = 'Center on Budget and Policy Priorities';
     metadata.contentType = 'report';
     
   } catch (e) {
@@ -5473,7 +5704,7 @@ function extractMercatusMetadata() {
     }
     
     // Set publisher
-    metadata.publisher = 'Mercatus Center';
+    metadata.journal = 'Mercatus Center';
     
     // Set content type - Mercatus produces mainly research papers and policy briefs
     metadata.contentType = 'report';
@@ -5564,7 +5795,7 @@ function extractEPIMetadata() {
     }
     
     // Set publisher and content type
-    metadata.publisher = 'Economic Policy Institute';
+    metadata.journal = 'Economic Policy Institute';
     metadata.contentType = 'report';
     
   } catch (e) {
@@ -5591,9 +5822,9 @@ function extractMilkenMetadata() {
     // Extract publisher from og:site_name
     const siteName = document.querySelector('meta[property="og:site_name"]');
     if (siteName) {
-      metadata.publisher = siteName.getAttribute('content').trim();
+      metadata.journal = siteName.getAttribute('content').trim();
     } else {
-      metadata.publisher = 'Milken Institute';
+      metadata.journal = 'Milken Institute';
     }
     
     // Extract date from published-at field
@@ -5738,7 +5969,7 @@ function extractThirdWayMetadata() {
     }
     
     // Set publisher and content type
-    metadata.publisher = 'Third Way';
+    metadata.journal = 'Third Way';
     metadata.contentType = 'report';
     
   } catch (e) {
@@ -5767,7 +5998,7 @@ function extractCEIMetadata() {
     }
     
     // Set publisher
-    metadata.publisher = 'Competitive Enterprise Institute';
+    metadata.journal = 'Competitive Enterprise Institute';
     
     // Set content type
     metadata.contentType = 'report';
@@ -5821,7 +6052,7 @@ function extractNationalReviewMetadata() {
     }
     
     // Set publisher and content type
-    metadata.publisher = 'National Review';
+    metadata.journal = 'National Review';
     metadata.contentType = 'news-article';
     
   } catch (e) {
@@ -5873,7 +6104,7 @@ function extractGlobeAndMailMetadata() {
     
     // Set standard fields
     metadata.contentType = 'news-article';
-    metadata.publisher = 'The Globe and Mail';
+    metadata.journal = 'The Globe and Mail';
     
   } catch (e) {
     console.error('Error in Globe and Mail extractor:', e);
@@ -5897,7 +6128,7 @@ function extractNYPostMetadata() {
     
     // Set standard fields
     metadata.contentType = 'news-article';
-    metadata.publisher = 'New York Post';
+    metadata.journal = 'New York Post';
     
   } catch (e) {
     console.error('Error in NY Post extractor:', e);
@@ -5931,7 +6162,7 @@ function extractUSNewsMetadata() {
     
     // Set standard fields
     metadata.contentType = 'news-article';
-    metadata.publisher = 'U.S. News & World Report';
+    metadata.journal = 'U.S. News & World Report';
     
   } catch (e) {
     console.error('Error in US News extractor:', e);
@@ -5969,7 +6200,7 @@ function extractDWMetadata() {
     
     // Set standard fields
     metadata.contentType = 'news-article';
-    metadata.publisher = 'Deutsche Welle';
+    metadata.journal = 'Deutsche Welle';
     
   } catch (e) {
     console.error('Error in DW extractor:', e);
@@ -6021,7 +6252,7 @@ function extractTimesOfIndiaMetadata() {
     
     // Set standard fields
     metadata.contentType = 'news-article';
-    metadata.publisher = 'Times of India';
+    metadata.journal = 'Times of India';
     
   } catch (e) {
     console.error('Error in Times of India extractor:', e);
@@ -6043,7 +6274,7 @@ function extractIndianExpressMetadata() {
     
     // Set standard fields
     metadata.contentType = 'news-article';
-    metadata.publisher = 'The Indian Express';
+    metadata.journal = 'The Indian Express';
     
   } catch (e) {
     console.error('Error in Indian Express extractor:', e);
@@ -6088,7 +6319,7 @@ function extractHindustanTimesMetadata() {
     
     // Set standard fields
     metadata.contentType = 'news-article';
-    metadata.publisher = 'Hindustan Times';
+    metadata.journal = 'Hindustan Times';
     
   } catch (e) {
     console.error('Error in Hindustan Times extractor:', e);
@@ -6137,7 +6368,7 @@ function extractTheHillMetadata() {
     
     // Set standard fields
     metadata.contentType = 'news-article';
-    metadata.publisher = 'The Hill';
+    metadata.journal = 'The Hill';
     
   } catch (e) {
     console.error('Error in The Hill extractor:', e);
@@ -6172,7 +6403,7 @@ function extractDailyBeastMetadata() {
     
     // Set standard fields
     metadata.contentType = 'news-article';
-    metadata.publisher = 'The Daily Beast';
+    metadata.journal = 'The Daily Beast';
     
   } catch (e) {
     console.error('Error in Daily Beast extractor:', e);
@@ -6204,7 +6435,7 @@ function extractNewsweekMetadata() {
     
     // Set standard fields
     metadata.contentType = 'news-article';
-    metadata.publisher = 'Newsweek';
+    metadata.journal = 'Newsweek';
     
   } catch (e) {
     console.error('Error in Newsweek extractor:', e);
@@ -6232,7 +6463,7 @@ function extractBangkokPostMetadata() {
     
     // Set standard fields
     metadata.contentType = 'news-article';
-    metadata.publisher = 'Bangkok Post';
+    metadata.journal = 'Bangkok Post';
     
   } catch (e) {
     console.error('Error in Bangkok Post extractor:', e);
@@ -6269,7 +6500,7 @@ function extractJapanTimesMetadata() {
     
     // Set standard fields
     metadata.contentType = 'news-article';
-    metadata.publisher = 'The Japan Times';
+    metadata.journal = 'The Japan Times';
     
   } catch (e) {
     console.error('Error in Japan Times extractor:', e);
@@ -6297,7 +6528,7 @@ function extractAPNewsMetadata() {
     
     // Set standard fields
     metadata.contentType = 'news-article';
-    metadata.publisher = 'Associated Press';
+    metadata.journal = 'Associated Press';
     
   } catch (e) {
     console.error('Error in AP News extractor:', e);
@@ -6355,7 +6586,7 @@ function extractRStreetMetadata() {
     }
     
     // Set publisher
-    metadata.publisher = 'R Street Institute';
+    metadata.journal = 'R Street Institute';
     
     // Set content type
     metadata.contentType = 'report';
@@ -6425,7 +6656,7 @@ function extractAspenMetadata() {
     }
     
     // Set publisher and content type
-    metadata.publisher = 'Aspen Institute';
+    metadata.journal = 'Aspen Institute';
     metadata.contentType = 'report';
     
   } catch (e) {
@@ -6491,7 +6722,7 @@ function extractFPRIMetadata() {
     }
     
     // Set publisher and content type
-    metadata.publisher = 'Foreign Policy Research Institute';
+    metadata.journal = 'Foreign Policy Research Institute';
     metadata.contentType = 'report';
     
   } catch (e) {
