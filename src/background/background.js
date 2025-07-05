@@ -2153,19 +2153,52 @@ async function fetchDOIMetadata(doi) {
 
 function mapCSLTypeToContentType(cslType) {
   const mapping = {
-    'article-journal': 'journal-article',
-    'article-magazine': 'magazine-article',
-    'article-newspaper': 'newspaper-article',
+    // CrossRef API types
+    'journal-article': 'journal-article',
+    'book-chapter': 'book-chapter',
     'book': 'book',
-    'chapter': 'book-chapter',
-    'paper-conference': 'conference-paper',
+    'monograph': 'monograph',
     'report': 'report',
     'thesis': 'thesis',
-    'webpage': 'website',
-    'post-weblog': 'blog-post'
+    'conference-paper': 'conference-paper',
+    'proceedings-article': 'proceedings-article',
+    'dataset': 'dataset',
+    'reference-entry': 'reference-entry',
+    'posted-content': 'preprint',
+    'dissertation': 'dissertation',
+    
+    // CSL JSON types
+    'article-journal': 'journal-article',
+    'article-magazine': 'article-magazine',
+    'article-newspaper': 'article-newspaper',
+    'chapter': 'book-chapter',
+    'paper-conference': 'conference-paper',
+    'webpage': 'webpage',
+    'post-weblog': 'webpage',
+    'post': 'webpage',
+    'manuscript': 'preprint',
+    'interview': 'interview',
+    'personal_communication': 'personal-communication',
+    'speech': 'speech',
+    'treaty': 'treaty',
+    'legal_case': 'legal-case',
+    'legislation': 'legislation',
+    'entry-dictionary': 'book-chapter',
+    'entry-encyclopedia': 'book-chapter',
+    
+    // Legacy mappings for backwards compatibility
+    'news-article': 'article-newspaper',
+    'encyclopedia-article': 'book-chapter',
+    'social-media-post': 'webpage',
+    'website': 'webpage',
+    'other': 'webpage',
+    'academic-article': 'journal-article',
+    'blog-post': 'webpage',
+    'magazine-article': 'article-magazine',
+    'newspaper-article': 'article-newspaper'
   };
   
-  return mapping[cslType] || 'academic-article';
+  return mapping[cslType] || 'webpage';
 }
 
 async function enhanceMetadataWithDOI(url, metadata) {

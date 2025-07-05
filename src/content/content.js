@@ -3543,19 +3543,8 @@ function extractLexisNexisMetadata() {
     // Always set journal to "Lexis" regardless of what we found
     metadata.journal = 'Lexis';
     
-    // Set content type based on what we found in the title/publisher
-    if (metadata.title) {
-      const titleLower = metadata.title.toLowerCase();
-      if (titleLower.includes('law') || titleLower.includes('legal') || titleLower.includes('court') || titleLower.includes('harv. j.') || titleLower.includes('yale l.j.')) {
-        metadata.contentType = 'legal-document';
-      } else if (titleLower.includes('news') || titleLower.includes('times') || titleLower.includes('post')) {
-        metadata.contentType = 'news-article';
-      } else {
-        metadata.contentType = 'report';
-      }
-    } else {
-      metadata.contentType = 'document';
-    }
+    // Default to law review for Lexis content (can be overridden by user)
+    metadata.contentType = 'law-review';
     
   } catch (e) {
     console.error('Error in LexisNexis extractor:', e);
