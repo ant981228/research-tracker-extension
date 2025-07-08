@@ -497,10 +497,9 @@ function updateUI(status) {
   isRecording = status.isRecording;
   currentSession = status.currentSession;
   
-  // Always update current page display
-  updatePageDisplay(currentUrl);
-  
   if (isRecording && currentSession) {
+    // Update current page display only when recording
+    updatePageDisplay(currentUrl);
     startBtn.disabled = true;
     pauseBtn.disabled = false;
     stopBtn.disabled = false;
@@ -539,6 +538,12 @@ function updateUI(status) {
     
     // Show current session section
     currentSessionSection.classList.remove('hidden');
+    
+    // Show current page section when recording
+    const currentPageSection = document.getElementById('current-page-section');
+    if (currentPageSection) {
+      currentPageSection.classList.remove('hidden');
+    }
   } else {
     startBtn.disabled = false;
     pauseBtn.disabled = true;
@@ -560,6 +565,12 @@ function updateUI(status) {
     
     // Hide current session section
     currentSessionSection.classList.add('hidden');
+    
+    // Hide current page section when not recording
+    const currentPageSection = document.getElementById('current-page-section');
+    if (currentPageSection) {
+      currentPageSection.classList.add('hidden');
+    }
   }
 }
 
