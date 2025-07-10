@@ -357,8 +357,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
               };
             }
             
-            // Only enhance with DOI if not a manual update and not already from DOI
-            if (!isManualUpdate && !message.metadata.doiMetadata) {
+            // Only enhance with identifier if not a manual update and not already from an identifier API
+            if (!isManualUpdate && !message.metadata.doiMetadata && !message.metadata.sourceIdentifier) {
               metadataToUpdate = await enhanceMetadataWithDOI(message.url, message.metadata);
             }
             
@@ -1204,6 +1204,37 @@ function startRecording(sessionName = '') {
     searches: [],
     pageVisits: []
   };
+  
+  // Capture the current page as the first entry in the session
+  chrome.tabs.query({ active: true, currentWindow: true }, async (tabs) => {
+    if (tabs.length > 0) {
+      const currentTab = tabs[0];
+      const currentTime = new Date().toISOString();
+      
+      // Check if current page is a search engine (this will automatically log the search if it is one)
+      const isSearchEngine = checkForSearch(currentTab);
+      
+      if (!isSearchEngine) {
+        // Check if this page should be excluded from logging
+        const isExcludedPage = await isExcludedFromLoggingAsync(currentTab.url);
+        
+        if (!isExcludedPage) {
+          // Log the page visit using the existing function
+          try {
+            await logPageVisit({
+              url: currentTab.url,
+              title: currentTab.title || '',
+              timestamp: currentTime,
+              tabId: currentTab.id
+            });
+            console.log('Captured current content page as first event');
+          } catch (error) {
+            console.error('Error logging current page visit:', error);
+          }
+        }
+      }
+    }
+  });
   
   // Save recording state
   chrome.storage.local.set({ 
@@ -2126,8 +2157,10 @@ async function fetchDOIMetadata(doi) {
 
     // Convert CSL JSON to our metadata format
     const metadata = {
-      doi: doi,
-      doiMetadata: true, // Flag to indicate this came from DOI API
+      doi: doi, // Keep for backward compatibility
+      doiMetadata: true, // Keep for backward compatibility
+      sourceIdentifier: { type: 'DOI', value: doi },
+      identifiers: [{ type: 'DOI', value: doi }],
       title: data.title,
       authors: [],
       publishDate: null,
@@ -2246,9 +2279,11 @@ function convertOpenLibraryToMetadata(data, isbn) {
     publishDate: '',
     publisher: '',
     pages: '',
-    isbn: isbn,
+    isbn: isbn, // Keep for backward compatibility
     contentType: 'book',
-    isbnMetadata: true
+    isbnMetadata: true, // Keep for backward compatibility
+    sourceIdentifier: { type: 'ISBN', value: isbn },
+    identifiers: [{ type: 'ISBN', value: isbn }]
   };
   
   // Process authors
@@ -2282,9 +2317,11 @@ function convertGoogleBooksToMetadata(data, isbn) {
     publishDate: '',
     publisher: volumeInfo.publisher || '',
     pages: '',
-    isbn: isbn,
+    isbn: isbn, // Keep for backward compatibility
     contentType: 'book',
-    isbnMetadata: true
+    isbnMetadata: true, // Keep for backward compatibility
+    sourceIdentifier: { type: 'ISBN', value: isbn },
+    identifiers: [{ type: 'ISBN', value: isbn }]
   };
   
   // Process authors
@@ -2336,9 +2373,11 @@ function convertPubMedToMetadata(data, pmid) {
     journal: data.fulljournalname || data.source || '',
     publicationInfo: '',
     pages: data.pages || '',
-    pmid: pmid,
+    pmid: pmid, // Keep for backward compatibility
     contentType: 'journal-article',
-    pmidMetadata: true
+    pmidMetadata: true, // Keep for backward compatibility
+    sourceIdentifier: { type: 'PMID', value: pmid },
+    identifiers: [{ type: 'PMID', value: pmid }]
   };
   
   // Process authors
@@ -2365,7 +2404,10 @@ function convertPubMedToMetadata(data, pmid) {
   if (data.elocationid) {
     const doiMatch = data.elocationid.match(/doi:\s*(.+)/);
     if (doiMatch) {
-      metadata.doi = doiMatch[1];
+      const doiValue = doiMatch[1];
+      metadata.doi = doiValue; // Keep for backward compatibility
+      // Add DOI to identifiers array
+      metadata.identifiers.push({ type: 'DOI', value: doiValue });
     }
   }
   
@@ -2380,62 +2422,93 @@ async function fetchArxivMetadata(arxivId) {
     // Use arXiv API
     const response = await fetch(`https://export.arxiv.org/api/query?id_list=${arxivId}`);
     
-    if (response.ok) {
-      const text = await response.text();
-      const parser = new DOMParser();
-      const xmlDoc = parser.parseFromString(text, 'text/xml');
-      
-      const entry = xmlDoc.querySelector('entry');
-      if (entry) {
-        console.log('arXiv data received');
-        return convertArxivToMetadata(entry, arxivId);
-      }
+    if (!response.ok) {
+      console.error('arXiv API request failed:', response.status, response.statusText);
+      return null;
     }
     
-    return null;
+    const text = await response.text();
+    console.log('arXiv API response received, length:', text.length);
+    
+    // Parse XML using text methods (DOMParser not available in service worker)
+    const result = parseArxivXML(text, arxivId);
+    console.log('arXiv metadata result:', result);
+    return result;
   } catch (error) {
     console.error('Error fetching arXiv metadata:', error);
     return null;
   }
 }
 
-function convertArxivToMetadata(entry, arxivId) {
-  const metadata = {
-    title: '',
-    author: '',
-    publishDate: '',
-    arxivId: arxivId,
-    contentType: 'preprint',
-    arxivMetadata: true
-  };
-  
-  // Get title
-  const titleElement = entry.querySelector('title');
-  if (titleElement) {
-    metadata.title = titleElement.textContent.trim();
+function parseArxivXML(xmlText, arxivId) {
+  try {
+    // Extract title from entry (not the query title)
+    // Look for <entry> section first, then find title within it
+    const entryMatch = xmlText.match(/<entry[^>]*>(.*?)<\/entry>/s);
+    let title = '';
+    if (entryMatch) {
+      const entryContent = entryMatch[1];
+      const titleMatch = entryContent.match(/<title[^>]*>(.*?)<\/title>/s);
+      title = titleMatch ? titleMatch[1].trim() : '';
+    }
+    
+    // Extract authors - look for all author name elements within entry
+    let authors = [];
+    if (entryMatch) {
+      const entryContent = entryMatch[1];
+      const authorMatches = entryContent.match(/<author[^>]*>.*?<name[^>]*>(.*?)<\/name>.*?<\/author>/gs);
+      if (authorMatches) {
+        authors = authorMatches.map(match => {
+          const nameMatch = match.match(/<name[^>]*>(.*?)<\/name>/s);
+          return nameMatch ? nameMatch[1].trim() : '';
+        }).filter(name => name);
+      }
+    }
+    
+    // Extract publication date from entry
+    let publishDate = '';
+    if (entryMatch) {
+      const entryContent = entryMatch[1];
+      const publishedMatch = entryContent.match(/<published[^>]*>(.*?)<\/published>/s);
+      if (publishedMatch) {
+        const date = new Date(publishedMatch[1].trim());
+        publishDate = date.toISOString().split('T')[0];
+      }
+    }
+    
+    // Extract abstract/summary from entry
+    let abstract = '';
+    if (entryMatch) {
+      const entryContent = entryMatch[1];
+      const summaryMatch = entryContent.match(/<summary[^>]*>(.*?)<\/summary>/s);
+      abstract = summaryMatch ? summaryMatch[1].trim() : '';
+    }
+    
+    // Check if we found any entry data
+    if (!title && authors.length === 0) {
+      console.error('No arXiv entry data found in XML');
+      return null;
+    }
+    
+    const metadata = {
+      title: title,
+      author: authors.join(', '),
+      publishDate: publishDate,
+      abstract: abstract,
+      arxivId: arxivId, // Keep for backward compatibility
+      contentType: 'preprint',
+      arxivMetadata: true, // Keep for backward compatibility
+      sourceIdentifier: { type: 'arXiv', value: arxivId },
+      identifiers: [{ type: 'arXiv', value: arxivId }]
+    };
+    
+    return metadata;
+  } catch (error) {
+    console.error('Error parsing arXiv XML:', error);
+    return null;
   }
-  
-  // Get authors
-  const authors = entry.querySelectorAll('author name');
-  if (authors.length > 0) {
-    metadata.author = Array.from(authors).map(a => a.textContent.trim()).join(', ');
-  }
-  
-  // Get publication date
-  const published = entry.querySelector('published');
-  if (published) {
-    const date = new Date(published.textContent);
-    metadata.publishDate = date.toISOString().split('T')[0];
-  }
-  
-  // Get abstract (could be useful for quals field)
-  const summary = entry.querySelector('summary');
-  if (summary) {
-    metadata.abstract = summary.textContent.trim();
-  }
-  
-  return metadata;
 }
+
 
 function mapCSLTypeToContentType(cslType) {
   const mapping = {

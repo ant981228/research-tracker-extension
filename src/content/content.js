@@ -4713,18 +4713,19 @@ document.addEventListener('keydown', async (e) => {
             if (metadata.publicationInfo) updates.publicationInfo = metadata.publicationInfo;
             if (metadata.pages) updates.pages = metadata.pages;
             if (metadata.doi) updates.doi = metadata.doi;
-            if (metadata.abstract) updates.quals = metadata.abstract;
+            if (metadata.quals) updates.quals = metadata.quals; // Only use actual quals field, never abstract
             if (metadata.contentType) updates.contentType = metadata.contentType;
             
             // Mark as DOI-sourced metadata
-            updates.doiMetadata = true;
+            updates.doiMetadata = true; // Keep for backward compatibility
+            updates.sourceIdentifier = { type: 'DOI', value: metadata.doi };
             updates.lastUpdated = new Date().toISOString();
             
             // Send all updates at once
             await updateCurrentPageMetadata('bulk', updates);
             
             // Show success toast with details
-            const fieldCount = Object.keys(updates).filter(k => !['doiMetadata', 'lastUpdated'].includes(k)).length;
+            const fieldCount = Object.keys(updates).filter(k => !['doiMetadata', 'sourceIdentifier', 'lastUpdated'].includes(k)).length;
             showToast(`Metadata auto-filled from DOI (${fieldCount} fields updated)`, 'success');
           } else {
             const errorMsg = response?.error || 'Failed to fetch metadata for this DOI';

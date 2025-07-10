@@ -34,7 +34,7 @@ let metadataType;
 let metadataJournal;
 let metadataPublicationInfo;
 let metadataPages;
-let metadataDoi;
+let metadataDoi; // Now serves as generic identifier field
 let metadataQuals;
 let metadataInfo;
 let saveMetadataBtn;
@@ -243,7 +243,7 @@ function init() {
   metadataJournal = document.getElementById('metadata-journal');
   metadataPublicationInfo = document.getElementById('metadata-publication-info');
   metadataPages = document.getElementById('metadata-pages');
-  metadataDoi = document.getElementById('metadata-doi');
+  metadataDoi = document.getElementById('metadata-doi'); // Now serves as generic identifier field
   metadataQuals = document.getElementById('metadata-quals');
   metadataInfo = document.getElementById('metadata-info');
   saveMetadataBtn = document.getElementById('save-metadata-btn');
@@ -339,7 +339,11 @@ function init() {
   viewSearchesBtn.addEventListener('click', openSearchesModal);
   
   // Metadata modal event listeners
-  saveMetadataBtn.addEventListener('click', saveMetadata);
+  console.log('DEBUG adding saveMetadata event listener to button:', saveMetadataBtn);
+  saveMetadataBtn.addEventListener('click', function(e) {
+    console.log('DEBUG save button clicked! Event:', e);
+    saveMetadata();
+  });
   cancelMetadataBtn.addEventListener('click', closeMetadataModal);
   closeMetadataBtn.addEventListener('click', closeMetadataModal);
   fillFromDoiBtn.addEventListener('click', openDoiInputModal);
@@ -1642,25 +1646,8 @@ function openMetadataModal() {
       currentPageMetadata = response.metadata;
       
       // Fill the form with current values
-      metadataTitle.value = currentPageMetadata.title || '';
-      
-      // Handle authors - could be string or array
-      if (currentPageMetadata.authors && Array.isArray(currentPageMetadata.authors)) {
-        metadataAuthor.value = currentPageMetadata.authors.join(', ');
-      } else {
-        metadataAuthor.value = currentPageMetadata.author || '';
-      }
-      
-      metadataDate.value = currentPageMetadata.publishDate || '';
-      metadataType.value = currentPageMetadata.contentType || '';
-      metadataJournal.value = currentPageMetadata.journal || '';
-      metadataPublicationInfo.value = currentPageMetadata.publicationInfo || '';
-      metadataPages.value = currentPageMetadata.pages || '';
-      metadataDoi.value = currentPageMetadata.doi || '';
-      metadataQuals.value = currentPageMetadata.quals || '';
-      
-      // Show comprehensive metadata source information
-      displayMetadataSourceInfo(currentPageMetadata);
+      // Use the centralized form filling function
+      fillMetadataForm(currentPageMetadata);
     }
     
     // Check for and restore pending edits after loading current metadata
@@ -1683,13 +1670,18 @@ function closeMetadataModal() {
 }
 
 function saveMetadata() {
+  console.log('DEBUG saveMetadata function called!');
+  
   if (!selectedPageUrl) {
     alert('No page selected.');
     closeMetadataModal();
     return;
   }
   
-  // Create metadata object - include all fields, even if empty
+  // Create metadata object directly from form fields - form is the source of truth
+  console.log('DEBUG saveMetadata - quals field value:', `"${metadataQuals.value}"`); 
+  console.log('DEBUG saveMetadata - quals field value trimmed:', `"${metadataQuals.value.trim()}"`); 
+  
   const metadata = {
     title: metadataTitle.value.trim(),
     author: metadataAuthor.value.trim(),
@@ -1698,11 +1690,36 @@ function saveMetadata() {
     journal: metadataJournal.value.trim(),
     publicationInfo: metadataPublicationInfo.value.trim(),
     pages: metadataPages.value.trim(),
-    doi: metadataDoi.value.trim(),
     quals: metadataQuals.value.trim(),
     manuallyEdited: true,
     editTimestamp: new Date().toISOString()
   };
+  
+  console.log('DEBUG saveMetadata - quals in metadata object:', `"${metadata.quals}"`); 
+  console.log('DEBUG saveMetadata - full metadata object:', metadata);
+  
+  // Handle the identifier field intelligently
+  const identifierValue = metadataDoi.value.trim();
+  if (identifierValue) {
+    // Detect what type of identifier this is
+    const detected = detectIdentifierType(identifierValue);
+    if (detected) {
+      // Update both new format and backward compatibility
+      metadata.sourceIdentifier = { type: detected.type, value: detected.identifier };
+      metadata.identifiers = [{ type: detected.type, value: detected.identifier }];
+      metadata.doi = detected.type === 'DOI' ? detected.identifier : ''; // Only set DOI if it's actually a DOI
+    } else {
+      // If we can't detect the type, assume it's a DOI for backward compatibility
+      metadata.doi = identifierValue;
+      metadata.sourceIdentifier = { type: 'DOI', value: identifierValue };
+      metadata.identifiers = [{ type: 'DOI', value: identifierValue }];
+    }
+  } else {
+    // Clear all identifier fields if empty
+    metadata.doi = '';
+    metadata.sourceIdentifier = null;
+    metadata.identifiers = [];
+  }
   
   // Handle authors as array if multiple authors separated by commas
   if (metadata.author && metadata.author.includes(',')) {
@@ -1800,6 +1817,12 @@ function saveMetadata() {
 // Smart Identifier Detection
 function detectIdentifierType(input) {
     const trimmed = input.trim();
+    
+    // arXiv DOI: Check for 10.48550/arXiv.XXXX.XXXXX format first
+    if (/^10\.48550\/arXiv\.(\d{4}\.\d{4,5}(v\d+)?)$/i.test(trimmed)) {
+        const arxivIdMatch = trimmed.match(/10\.48550\/arXiv\.(\d{4}\.\d{4,5}(v\d+)?)/i);
+        return { type: 'arXiv', identifier: arxivIdMatch[1] };
+    }
     
     // DOI: Starts with "10." or contains doi.org URL
     if (/^10\.\d{4,}(?:\.\d+)*\/[^\s]+/.test(trimmed) || 
@@ -1923,6 +1946,17 @@ async function fetchFromIdentifier() {
         // Fill the metadata form with the fetched data
         fillMetadataForm(response.metadata);
         
+        // Immediately save the fetched metadata to preserve sourceIdentifier
+        console.log('DEBUG smart lookup - saving fetched metadata:', response.metadata);
+        chrome.runtime.sendMessage({
+          action: 'updatePageMetadata',
+          url: selectedPageUrl,
+          metadata: response.metadata,
+          isManualUpdate: false // This is from smart lookup, not user edit
+        }, (saveResponse) => {
+          console.log('DEBUG smart lookup - metadata saved:', saveResponse);
+        });
+        
         // Close the input modal and return to metadata modal
         closeDoiInputModal();
         
@@ -1950,6 +1984,10 @@ async function fetchFromDoi() {
 }
 
 function fillMetadataForm(metadata) {
+  console.log('DEBUG fillMetadataForm called with metadata:', metadata);
+  console.log('DEBUG fillMetadataForm - metadata.quals:', `"${metadata.quals}"`);
+  console.log('DEBUG fillMetadataForm - metadata.abstract:', `"${metadata.abstract}"`);
+  
   // Fill the form fields with the fetched metadata
   if (metadata.title) metadataTitle.value = metadata.title;
   if (metadata.author) metadataAuthor.value = metadata.author;
@@ -1957,9 +1995,26 @@ function fillMetadataForm(metadata) {
   if (metadata.journal) metadataJournal.value = metadata.journal;
   if (metadata.publicationInfo) metadataPublicationInfo.value = metadata.publicationInfo;
   if (metadata.pages) metadataPages.value = metadata.pages;
-  if (metadata.doi) metadataDoi.value = metadata.doi;
   if (metadata.contentType) metadataType.value = metadata.contentType;
-  if (metadata.abstract) metadataQuals.value = metadata.abstract;
+  
+  // Handle quals field - only use actual quals field, never abstract
+  if (metadata.quals) {
+    console.log('DEBUG fillMetadataForm - setting quals from metadata.quals:', `"${metadata.quals}"`);
+    metadataQuals.value = metadata.quals;
+  } else {
+    console.log('DEBUG fillMetadataForm - no quals found, clearing field');
+    metadataQuals.value = '';
+  }
+  
+  console.log('DEBUG fillMetadataForm - final quals field value:', `"${metadataQuals.value}"`);
+  // Handle the identifier field - show the primary identifier from sourceIdentifier or fall back to DOI
+  if (metadata.sourceIdentifier && metadata.sourceIdentifier.value) {
+    metadataDoi.value = metadata.sourceIdentifier.value;
+  } else if (metadata.doi) {
+    metadataDoi.value = metadata.doi;
+  } else {
+    metadataDoi.value = '';
+  }
   
   // Update metadata info to show identifier source
   displayMetadataSourceInfo(metadata);
@@ -2534,8 +2589,22 @@ function displayMetadataSourceInfo(metadata) {
   
   const infoItems = [];
   
-  // Check if metadata came from DOI API
-  if (metadata.doiMetadata) {
+  // Check if metadata came from identifier API
+  if (metadata.sourceIdentifier) {
+    const sourceType = metadata.sourceIdentifier.type;
+    const sourceText = sourceType === 'DOI' ? 'DOI registry' :
+                      sourceType === 'ISBN' ? 'ISBN database' :
+                      sourceType === 'PMID' ? 'PubMed database' :
+                      sourceType === 'arXiv' ? 'arXiv repository' :
+                      `${sourceType} database`;
+    infoItems.push({
+      text: `Metadata fetched from ${sourceText}`,
+      color: '#2e7d32',
+      icon: '✓'
+    });
+  }
+  // Backward compatibility for old doiMetadata flag
+  else if (metadata.doiMetadata) {
     infoItems.push({
       text: 'Metadata fetched from DOI registry',
       color: '#2e7d32',
@@ -2648,3 +2717,4 @@ function clearAllMetadata() {
     }
   });
 }
+
