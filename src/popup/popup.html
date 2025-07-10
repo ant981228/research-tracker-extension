@@ -152,24 +152,31 @@
           
           <div class="modal-buttons">
             <button id="save-metadata-btn" class="action-btn">Save Metadata</button>
-            <button id="fill-from-doi-btn" class="action-btn secondary-btn">Fill from DOI</button>
+            <button id="fill-from-doi-btn" class="action-btn secondary-btn">Smart Lookup</button>
             <button id="cancel-metadata-btn" class="action-btn secondary-btn">Cancel</button>
           </div>
         </div>
       </div>
       
-      <!-- DOI Input Modal -->
+      <!-- Smart Lookup Modal (DOI, ISBN, PMID, arXiv, etc.) -->
       <div id="doi-input-modal" class="modal hidden" style="display: none;">
         <div class="modal-content">
           <span class="close-doi-modal">&times;</span>
-          <h3>Fill Metadata from DOI</h3>
+          <h3>Smart Metadata Lookup</h3>
           
           <div class="form-group">
-            <label for="doi-input">Enter DOI:</label>
-            <input type="text" id="doi-input" placeholder="10.xxxx/xxxxx" style="width: 100%; box-sizing: border-box;">
+            <label for="doi-input">Enter identifier:</label>
+            <input type="text" id="doi-input" placeholder="DOI, ISBN, PMID, or arXiv ID" style="width: 100%; box-sizing: border-box;">
             <div class="setting-description">
-              Enter the DOI (Digital Object Identifier) to automatically fetch metadata. Example: 10.1038/nature12373
+              Examples:
+              <ul style="margin: 5px 0; padding-left: 20px; font-size: 0.9em;">
+                <li>DOI: 10.1038/nature12373</li>
+                <li>ISBN: 978-0-596-52068-7</li>
+                <li>PMID: 26360422</li>
+                <li>arXiv: 1501.00001</li>
+              </ul>
             </div>
+            <div id="identifier-type" style="font-size: 0.9em; color: #007bff; margin-top: 5px; display: none;"></div>
           </div>
           
           <div class="modal-buttons">

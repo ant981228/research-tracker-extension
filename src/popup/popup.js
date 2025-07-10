@@ -344,8 +344,8 @@ function init() {
   closeMetadataBtn.addEventListener('click', closeMetadataModal);
   fillFromDoiBtn.addEventListener('click', openDoiInputModal);
   
-  // DOI input modal event listeners
-  fetchDoiBtn.addEventListener('click', fetchFromDoi);
+  // Smart lookup modal event listeners
+  fetchDoiBtn.addEventListener('click', fetchFromIdentifier);
   cancelDoiBtn.addEventListener('click', closeDoiInputModal);
   closeDoiModalBtn.addEventListener('click', closeDoiInputModal);
   
@@ -1797,21 +1797,85 @@ function saveMetadata() {
   }
 }
 
-// DOI Input Modal Functions
+// Smart Identifier Detection
+function detectIdentifierType(input) {
+    const trimmed = input.trim();
+    
+    // DOI: Starts with "10." or contains doi.org URL
+    if (/^10\.\d{4,}(?:\.\d+)*\/[^\s]+/.test(trimmed) || 
+        /(?:doi\.org|dx\.doi\.org)\/10\.\d{4,}/.test(trimmed)) {
+        // Extract DOI from URL if needed
+        const doiMatch = trimmed.match(/10\.\d{4,}(?:\.\d+)*\/[^\s]+/);
+        return { type: 'DOI', identifier: doiMatch ? doiMatch[0] : trimmed };
+    }
+    
+    // ISBN: 10 or 13 digits with optional hyphens/spaces
+    const isbnDigits = trimmed.replace(/[\-\s]/g, '');
+    if (/^(?:97[89])?\d{9}[\dX]$/i.test(isbnDigits)) {
+        if (isbnDigits.length === 10 || isbnDigits.length === 13) {
+            return { type: 'ISBN', identifier: isbnDigits };
+        }
+    }
+    
+    // PMID: Pure digits, typically 5-8 digits (but can be longer)
+    if (/^\d{5,9}$/.test(trimmed)) {
+        return { type: 'PMID', identifier: trimmed };
+    }
+    
+    // arXiv: New format YYMM.NNNNN or old format archive/YYMMNNN
+    if (/^\d{4}\.\d{4,5}(v\d+)?$/i.test(trimmed) || 
+        /^[a-z\-]+(\.[A-Z]{2})?\/\d{7}(v\d+)?$/i.test(trimmed)) {
+        return { type: 'arXiv', identifier: trimmed };
+    }
+    
+    // ISSN: NNNN-NNNX (8 digits with optional hyphen)
+    if (/^\d{4}\-?\d{3}[\dX]$/i.test(trimmed)) {
+        return { type: 'ISSN', identifier: trimmed };
+    }
+    
+    return null;
+}
+
+// Smart Lookup Modal Functions (now supports all identifier types)
 function openDoiInputModal() {
   showModal(doiInputModal, 'doi-input');
   doiInput.value = ''; // Clear previous input
+  const identifierTypeDiv = document.getElementById('identifier-type');
+  if (identifierTypeDiv) {
+    identifierTypeDiv.style.display = 'none';
+    identifierTypeDiv.textContent = '';
+  }
   doiInput.focus();
   
-  // Remove any existing keypress listeners to avoid duplicates
+  // Remove any existing listeners to avoid duplicates
   doiInput.removeEventListener('keypress', handleDoiInputKeypress);
+  doiInput.removeEventListener('input', handleIdentifierInput);
+  
   // Allow Enter key to trigger fetch
   doiInput.addEventListener('keypress', handleDoiInputKeypress);
+  // Add input listener for identifier detection
+  doiInput.addEventListener('input', handleIdentifierInput);
 }
 
 function handleDoiInputKeypress(e) {
   if (e.key === 'Enter') {
-    fetchFromDoi();
+    fetchFromIdentifier();
+  }
+}
+
+function handleIdentifierInput(e) {
+  const identifierTypeDiv = document.getElementById('identifier-type');
+  const input = e.target.value.trim();
+  if (input) {
+    const detected = detectIdentifierType(input);
+    if (detected) {
+      identifierTypeDiv.textContent = `Detected: ${detected.type}`;
+      identifierTypeDiv.style.display = 'block';
+    } else {
+      identifierTypeDiv.style.display = 'none';
+    }
+  } else {
+    identifierTypeDiv.style.display = 'none';
   }
 }
 
@@ -1819,17 +1883,18 @@ function closeDoiInputModal() {
   hideCurrentModal();
 }
 
-async function fetchFromDoi() {
-  const doi = doiInput.value.trim();
+async function fetchFromIdentifier() {
+  const input = doiInput.value.trim();
   
-  if (!doi) {
-    alert('Please enter a DOI');
+  if (!input) {
+    alert('Please enter an identifier');
     return;
   }
   
-  // Validate DOI format (basic check)
-  if (!doi.match(/^10\.\d{4,}(?:\.\d+)*\/[^\s]+/)) {
-    alert('Please enter a valid DOI (e.g., 10.1038/nature12373)');
+  // Detect identifier type
+  const detected = detectIdentifierType(input);
+  if (!detected) {
+    alert('Unable to detect identifier type. Please check your input.');
     return;
   }
   
@@ -1838,17 +1903,18 @@ async function fetchFromDoi() {
   fetchDoiBtn.textContent = 'Fetching...';
   
   try {
-    // Send message to background script to fetch DOI metadata
+    // Send message to background script to fetch metadata
     chrome.runtime.sendMessage({
-      action: 'fetchDOIMetadata',
-      doi: doi
+      action: 'fetchMetadata',
+      identifierType: detected.type,
+      identifier: detected.identifier
     }, (response) => {
       // Reset button state
       fetchDoiBtn.disabled = false;
       fetchDoiBtn.textContent = 'Fetch Metadata';
       
       if (chrome.runtime.lastError) {
-        console.error('Error fetching DOI metadata:', chrome.runtime.lastError);
+        console.error('Error fetching metadata:', chrome.runtime.lastError);
         alert('Error communicating with background script');
         return;
       }
@@ -1857,25 +1923,30 @@ async function fetchFromDoi() {
         // Fill the metadata form with the fetched data
         fillMetadataForm(response.metadata);
         
-        // Close the DOI input modal and return to metadata modal
+        // Close the input modal and return to metadata modal
         closeDoiInputModal();
         
         // Show success message
-        alert('Metadata fetched successfully from DOI!');
+        alert(`Metadata fetched successfully from ${detected.type}!`);
       } else {
-        // On error, stay in the DOI modal so user can try again
-        const errorMsg = response?.error || 'Failed to fetch metadata for this DOI';
+        // On error, stay in the modal so user can try again
+        const errorMsg = response?.error || `Failed to fetch metadata for this ${detected.type}`;
         alert('Error: ' + errorMsg);
-        // DOI modal remains open for user to correct input or try again
+        // Modal remains open for user to correct input or try again
       }
     });
   } catch (e) {
     fetchDoiBtn.disabled = false;
     fetchDoiBtn.textContent = 'Fetch Metadata';
-    console.error('Exception in fetchFromDoi:', e);
+    console.error('Exception in fetchFromIdentifier:', e);
     alert('Error: ' + e.message);
-    // DOI modal remains open for user to try again
+    // Modal remains open for user to try again
   }
+}
+
+// Backward compatibility function
+async function fetchFromDoi() {
+  return fetchFromIdentifier();
 }
 
 function fillMetadataForm(metadata) {
@@ -1890,9 +1961,8 @@ function fillMetadataForm(metadata) {
   if (metadata.contentType) metadataType.value = metadata.contentType;
   if (metadata.abstract) metadataQuals.value = metadata.abstract;
   
-  // Update metadata info to show DOI source
-  const updatedMetadata = { ...metadata, doiMetadata: true };
-  displayMetadataSourceInfo(updatedMetadata);
+  // Update metadata info to show identifier source
+  displayMetadataSourceInfo(metadata);
 }
 
 // Helper functions

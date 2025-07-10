@@ -1036,6 +1036,48 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       });
       return true; // Indicates async response
       
+    case 'fetchMetadata':
+      console.log('Received fetchMetadata message:', message);
+      (async () => {
+        try {
+          if (!message.identifierType || !message.identifier) {
+            sendResponse({ success: false, error: 'Missing identifier type or identifier' });
+            return;
+          }
+
+          let metadata = null;
+          
+          switch (message.identifierType) {
+            case 'DOI':
+              metadata = await fetchDOIMetadata(message.identifier);
+              break;
+            case 'ISBN':
+              metadata = await fetchISBNMetadata(message.identifier);
+              break;
+            case 'PMID':
+              metadata = await fetchPMIDMetadata(message.identifier);
+              break;
+            case 'arXiv':
+              metadata = await fetchArxivMetadata(message.identifier);
+              break;
+            default:
+              sendResponse({ success: false, error: `${message.identifierType} lookup not yet implemented` });
+              return;
+          }
+          
+          if (metadata) {
+            sendResponse({ success: true, metadata });
+          } else {
+            sendResponse({ success: false, error: `Failed to fetch metadata for this ${message.identifierType}` });
+          }
+        } catch (e) {
+          console.error(`Error in fetch${message.identifierType}Metadata:`, e);
+          sendResponse({ success: false, error: e.message });
+        }
+      })();
+      return true; // Keep the message channel open for async response
+      break;
+      
     case 'fetchDOIMetadata':
       console.log('Received fetchDOIMetadata message:', message);
       (async () => {
@@ -2149,6 +2191,250 @@ async function fetchDOIMetadata(doi) {
     console.error('Error fetching DOI metadata:', e);
     return null;
   }
+}
+
+// ISBN Metadata Fetching
+async function fetchISBNMetadata(isbn) {
+  try {
+    console.log('Fetching metadata for ISBN:', isbn);
+    
+    // Try Open Library API first (completely free, no auth required)
+    try {
+      console.log('Trying Open Library API...');
+      const response = await fetch(`https://openlibrary.org/api/books?bibkeys=ISBN:${isbn}&jscmd=details&format=json`);
+      
+      if (response.ok) {
+        const data = await response.json();
+        const bookKey = `ISBN:${isbn}`;
+        if (data[bookKey]) {
+          console.log('Open Library data received:', data[bookKey]);
+          return convertOpenLibraryToMetadata(data[bookKey], isbn);
+        }
+      }
+    } catch (e) {
+      console.log('Open Library API failed:', e.message);
+    }
+    
+    // Try Google Books API as fallback
+    try {
+      console.log('Trying Google Books API...');
+      const response = await fetch(`https://www.googleapis.com/books/v1/volumes?q=isbn:${isbn}`);
+      
+      if (response.ok) {
+        const data = await response.json();
+        if (data.totalItems > 0 && data.items && data.items[0]) {
+          console.log('Google Books data received:', data.items[0]);
+          return convertGoogleBooksToMetadata(data.items[0], isbn);
+        }
+      }
+    } catch (e) {
+      console.log('Google Books API failed:', e.message);
+    }
+    
+    return null;
+  } catch (error) {
+    console.error('Error fetching ISBN metadata:', error);
+    return null;
+  }
+}
+
+function convertOpenLibraryToMetadata(data, isbn) {
+  const details = data.details || {};
+  const metadata = {
+    title: details.title || '',
+    author: '',
+    publishDate: '',
+    publisher: '',
+    pages: '',
+    isbn: isbn,
+    contentType: 'book',
+    isbnMetadata: true
+  };
+  
+  // Process authors
+  if (details.authors && details.authors.length > 0) {
+    metadata.author = details.authors.map(a => a.name || '').join(', ');
+  }
+  
+  // Process publication date
+  if (details.publish_date) {
+    metadata.publishDate = details.publish_date;
+  }
+  
+  // Process publishers
+  if (details.publishers && details.publishers.length > 0) {
+    metadata.publisher = details.publishers.join(', ');
+  }
+  
+  // Process page count
+  if (details.number_of_pages) {
+    metadata.pages = details.number_of_pages.toString();
+  }
+  
+  return metadata;
+}
+
+function convertGoogleBooksToMetadata(data, isbn) {
+  const volumeInfo = data.volumeInfo || {};
+  const metadata = {
+    title: volumeInfo.title || '',
+    author: '',
+    publishDate: '',
+    publisher: volumeInfo.publisher || '',
+    pages: '',
+    isbn: isbn,
+    contentType: 'book',
+    isbnMetadata: true
+  };
+  
+  // Process authors
+  if (volumeInfo.authors && volumeInfo.authors.length > 0) {
+    metadata.author = volumeInfo.authors.join(', ');
+  }
+  
+  // Process publication date
+  if (volumeInfo.publishedDate) {
+    metadata.publishDate = volumeInfo.publishedDate;
+  }
+  
+  // Process page count
+  if (volumeInfo.pageCount) {
+    metadata.pages = volumeInfo.pageCount.toString();
+  }
+  
+  return metadata;
+}
+
+// PMID Metadata Fetching
+async function fetchPMIDMetadata(pmid) {
+  try {
+    console.log('Fetching metadata for PMID:', pmid);
+    
+    // Use NCBI E-utilities API
+    const response = await fetch(`https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi?db=pubmed&id=${pmid}&retmode=json`);
+    
+    if (response.ok) {
+      const data = await response.json();
+      if (data.result && data.result[pmid]) {
+        console.log('PubMed data received:', data.result[pmid]);
+        return convertPubMedToMetadata(data.result[pmid], pmid);
+      }
+    }
+    
+    return null;
+  } catch (error) {
+    console.error('Error fetching PMID metadata:', error);
+    return null;
+  }
+}
+
+function convertPubMedToMetadata(data, pmid) {
+  const metadata = {
+    title: data.title || '',
+    author: '',
+    publishDate: '',
+    journal: data.fulljournalname || data.source || '',
+    publicationInfo: '',
+    pages: data.pages || '',
+    pmid: pmid,
+    contentType: 'journal-article',
+    pmidMetadata: true
+  };
+  
+  // Process authors
+  if (data.authors && data.authors.length > 0) {
+    metadata.author = data.authors.map(a => a.name || '').join(', ');
+  }
+  
+  // Process publication date
+  if (data.pubdate) {
+    metadata.publishDate = data.pubdate;
+  } else if (data.epubdate) {
+    metadata.publishDate = data.epubdate;
+  }
+  
+  // Process publication info (volume, issue)
+  const pubInfo = [];
+  if (data.volume) pubInfo.push(`Vol. ${data.volume}`);
+  if (data.issue) pubInfo.push(`No. ${data.issue}`);
+  if (pubInfo.length > 0) {
+    metadata.publicationInfo = pubInfo.join(', ');
+  }
+  
+  // Add DOI if available
+  if (data.elocationid) {
+    const doiMatch = data.elocationid.match(/doi:\s*(.+)/);
+    if (doiMatch) {
+      metadata.doi = doiMatch[1];
+    }
+  }
+  
+  return metadata;
+}
+
+// arXiv Metadata Fetching
+async function fetchArxivMetadata(arxivId) {
+  try {
+    console.log('Fetching metadata for arXiv:', arxivId);
+    
+    // Use arXiv API
+    const response = await fetch(`https://export.arxiv.org/api/query?id_list=${arxivId}`);
+    
+    if (response.ok) {
+      const text = await response.text();
+      const parser = new DOMParser();
+      const xmlDoc = parser.parseFromString(text, 'text/xml');
+      
+      const entry = xmlDoc.querySelector('entry');
+      if (entry) {
+        console.log('arXiv data received');
+        return convertArxivToMetadata(entry, arxivId);
+      }
+    }
+    
+    return null;
+  } catch (error) {
+    console.error('Error fetching arXiv metadata:', error);
+    return null;
+  }
+}
+
+function convertArxivToMetadata(entry, arxivId) {
+  const metadata = {
+    title: '',
+    author: '',
+    publishDate: '',
+    arxivId: arxivId,
+    contentType: 'preprint',
+    arxivMetadata: true
+  };
+  
+  // Get title
+  const titleElement = entry.querySelector('title');
+  if (titleElement) {
+    metadata.title = titleElement.textContent.trim();
+  }
+  
+  // Get authors
+  const authors = entry.querySelectorAll('author name');
+  if (authors.length > 0) {
+    metadata.author = Array.from(authors).map(a => a.textContent.trim()).join(', ');
+  }
+  
+  // Get publication date
+  const published = entry.querySelector('published');
+  if (published) {
+    const date = new Date(published.textContent);
+    metadata.publishDate = date.toISOString().split('T')[0];
+  }
+  
+  // Get abstract (could be useful for quals field)
+  const summary = entry.querySelector('summary');
+  if (summary) {
+    metadata.abstract = summary.textContent.trim();
+  }
+  
+  return metadata;
 }
 
 function mapCSLTypeToContentType(cslType) {
