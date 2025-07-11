@@ -4507,6 +4507,51 @@ function parseDOI(text) {
   return doiStr.replace(/^doi:\s*/i, '').trim();
 }
 
+// Smart Identifier Detection (copied from popup for consistency)
+function detectIdentifierType(input) {
+    const trimmed = input.trim();
+    
+    // arXiv DOI: Check for 10.48550/arXiv.XXXX.XXXXX format first
+    if (/^10\.48550\/arXiv\.(\d{4}\.\d{4,5}(v\d+)?)$/i.test(trimmed)) {
+        const arxivIdMatch = trimmed.match(/10\.48550\/arXiv\.(\d{4}\.\d{4,5}(v\d+)?)/i);
+        return { type: 'arXiv', identifier: arxivIdMatch[1] };
+    }
+    
+    // DOI: Starts with "10." or contains doi.org URL
+    if (/^10\.\d{4,}(?:\.\d+)*\/[^\s]+/.test(trimmed) || 
+        /(?:doi\.org|dx\.doi\.org)\/10\.\d{4,}/.test(trimmed)) {
+        // Extract DOI from URL if needed
+        const doiMatch = trimmed.match(/10\.\d{4,}(?:\.\d+)*\/[^\s]+/);
+        return { type: 'DOI', identifier: doiMatch ? doiMatch[0] : trimmed };
+    }
+    
+    // ISBN: 10 or 13 digits with optional hyphens/spaces
+    const isbnDigits = trimmed.replace(/[\-\s]/g, '');
+    if (/^(?:97[89])?\d{9}[\dX]$/i.test(isbnDigits)) {
+        if (isbnDigits.length === 10 || isbnDigits.length === 13) {
+            return { type: 'ISBN', identifier: isbnDigits };
+        }
+    }
+    
+    // PMID: Pure digits, typically 5-8 digits (but can be longer)
+    if (/^\d{5,9}$/.test(trimmed)) {
+        return { type: 'PMID', identifier: trimmed };
+    }
+    
+    // arXiv: New format YYMM.NNNNN or old format archive/YYMMNNN
+    if (/^\d{4}\.\d{4,5}(v\d+)?$/i.test(trimmed) || 
+        /^[a-z\-]+(\.[A-Z]{2})?\/\d{7}(v\d+)?$/i.test(trimmed)) {
+        return { type: 'arXiv', identifier: trimmed };
+    }
+    
+    // ISSN: NNNN-NNNX (8 digits with optional hyphen)
+    if (/^\d{4}\-?\d{3}[\dX]$/i.test(trimmed)) {
+        return { type: 'ISSN', identifier: trimmed };
+    }
+    
+    return null;
+}
+
 // Check if currently recording
 async function isCurrentlyRecording() {
   return new Promise((resolve) => {
@@ -4668,35 +4713,36 @@ document.addEventListener('keydown', async (e) => {
         parsedValue = originalValue; // Just trim
         break;
         
-      case '8': // DOI
-        field = 'doi';
-        parsedValue = parseDOI(selectedText);
+      case '8': // Identifier (DOI, ISBN, PMID, arXiv, etc.)
+        field = 'doi'; // Still use 'doi' field name for backward compatibility
+        parsedValue = selectedText.trim(); // Accept any identifier type as-is
         break;
         
-      case '0': // Auto-fill metadata from DOI
-        console.log('Research Tracker: Auto-fill from DOI requested');
+      case '0': // Auto-fill metadata from identifier (DOI, ISBN, PMID, arXiv, etc.)
+        console.log('Research Tracker: Auto-fill from identifier requested');
         
-        // Extract DOI from selected text
-        const extractedDoi = parseDOI(selectedText);
-        if (!extractedDoi) {
-          showToast('No valid DOI found in selected text', 'error');
+        // Detect identifier type from selected text
+        const detected = detectIdentifierType(selectedText);
+        if (!detected) {
+          showToast('No valid identifier found in selected text', 'error');
           return;
         }
         
         // Show loading toast
-        showToast(`Fetching metadata for DOI: ${extractedDoi}...`, 'info');
+        showToast(`Fetching metadata for ${detected.type}: ${detected.identifier}...`, 'info');
         
         try {
-          // Send message to background to fetch DOI metadata
+          // Send message to background to fetch metadata based on identifier type
           const response = await new Promise((resolve) => {
             chrome.runtime.sendMessage({
-              action: 'fetchDOIMetadata',
-              doi: extractedDoi
+              action: 'fetchIdentifierMetadata',
+              identifierType: detected.type,
+              identifier: detected.identifier
             }, resolve);
           });
           
           if (chrome.runtime.lastError) {
-            console.error('Error fetching DOI metadata:', chrome.runtime.lastError);
+            console.error('Error fetching identifier metadata:', chrome.runtime.lastError);
             showToast('Error communicating with extension', 'error');
             return;
           }
@@ -4716,9 +4762,9 @@ document.addEventListener('keydown', async (e) => {
             if (metadata.quals) updates.quals = metadata.quals; // Only use actual quals field, never abstract
             if (metadata.contentType) updates.contentType = metadata.contentType;
             
-            // Mark as DOI-sourced metadata
+            // Mark with source metadata
             updates.doiMetadata = true; // Keep for backward compatibility
-            updates.sourceIdentifier = { type: 'DOI', value: metadata.doi };
+            updates.sourceIdentifier = { type: detected.type, value: detected.identifier };
             updates.lastUpdated = new Date().toISOString();
             
             // Send all updates at once
@@ -4726,13 +4772,13 @@ document.addEventListener('keydown', async (e) => {
             
             // Show success toast with details
             const fieldCount = Object.keys(updates).filter(k => !['doiMetadata', 'sourceIdentifier', 'lastUpdated'].includes(k)).length;
-            showToast(`Metadata auto-filled from DOI (${fieldCount} fields updated)`, 'success');
+            showToast(`Metadata auto-filled from ${detected.type} (${fieldCount} fields updated)`, 'success');
           } else {
-            const errorMsg = response?.error || 'Failed to fetch metadata for this DOI';
-            showToast(`DOI fetch failed: ${errorMsg}`, 'error');
+            const errorMsg = response?.error || `Failed to fetch metadata for this ${detected.type}`;
+            showToast(`${detected.type} fetch failed: ${errorMsg}`, 'error');
           }
         } catch (error) {
-          console.error('Exception in DOI auto-fill:', error);
+          console.error('Exception in identifier auto-fill:', error);
           showToast(`Error: ${error.message}`, 'error');
         }
         return; // Special case - don't continue with normal processing

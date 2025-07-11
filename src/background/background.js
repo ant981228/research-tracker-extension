@@ -1103,6 +1103,49 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return true; // Keep the message channel open for async response
       break;
       
+    case 'fetchIdentifierMetadata':
+      console.log('Received fetchIdentifierMetadata message:', message);
+      (async () => {
+        try {
+          if (!message.identifierType || !message.identifier) {
+            sendResponse({ success: false, error: 'Missing identifier type or identifier' });
+            return;
+          }
+
+          let metadata = null;
+          
+          // Route to appropriate fetcher based on identifier type
+          switch (message.identifierType) {
+            case 'DOI':
+              metadata = await fetchDOIMetadata(message.identifier);
+              break;
+            case 'ISBN':
+              metadata = await fetchISBNMetadata(message.identifier);
+              break;
+            case 'PMID':
+              metadata = await fetchPMIDMetadata(message.identifier);
+              break;
+            case 'arXiv':
+              metadata = await fetchArxivMetadata(message.identifier);
+              break;
+            default:
+              sendResponse({ success: false, error: `Unsupported identifier type: ${message.identifierType}` });
+              return;
+          }
+          
+          if (metadata) {
+            sendResponse({ success: true, metadata });
+          } else {
+            sendResponse({ success: false, error: `Failed to fetch metadata for this ${message.identifierType}` });
+          }
+        } catch (e) {
+          console.error('Error in fetchIdentifierMetadata:', e);
+          sendResponse({ success: false, error: e.message });
+        }
+      })();
+      return true; // Keep the message channel open for async response
+      break;
+      
     case 'getRecordingStatus':
       sendResponse({ success: true, isRecording });
       break;
