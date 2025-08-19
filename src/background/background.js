@@ -3369,7 +3369,6 @@ function processSessionForExport(session, format, resolve, reject) {
         reject('Unsupported export format');
       }
     });
-  });
 }
 
 // Helper function to deduplicate consecutive identical notes
