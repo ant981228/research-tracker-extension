@@ -2929,99 +2929,138 @@ async function getSessions() {
 }
 
 async function renameSession(sessionId, newName) {
-  return new Promise((resolve, reject) => {
-    chrome.storage.local.get([STORAGE_KEYS.SESSIONS], (result) => {
-      const sessions = result[STORAGE_KEYS.SESSIONS] || [];
-      const sessionIndex = sessions.findIndex(s => s.id === sessionId);
-      
-      if (sessionIndex === -1) {
-        reject('Session not found');
-        return;
-      }
-      
+  try {
+    // Try to get session from IndexedDB first
+    const session = await researchTrackerDB.getSession(sessionId);
+    
+    if (session) {
       // Update the session name
-      sessions[sessionIndex].name = newName;
-      
-      // Save back to storage
-      chrome.storage.local.set({ [STORAGE_KEYS.SESSIONS]: sessions }, () => {
-        if (chrome.runtime.lastError) {
-          reject(chrome.runtime.lastError);
-        } else {
-          resolve();
-        }
+      session.name = newName;
+      // Save back to IndexedDB
+      await researchTrackerDB.saveSession(session);
+      return Promise.resolve();
+    } else {
+      // Fall back to chrome.storage if not found in IndexedDB
+      return new Promise((resolve, reject) => {
+        chrome.storage.local.get([STORAGE_KEYS.SESSIONS], (result) => {
+          const sessions = result[STORAGE_KEYS.SESSIONS] || [];
+          const sessionIndex = sessions.findIndex(s => s && s.id === sessionId);
+          
+          if (sessionIndex === -1) {
+            reject('Session not found');
+            return;
+          }
+          
+          // Update the session name
+          sessions[sessionIndex].name = newName;
+          
+          // Save back to storage
+          chrome.storage.local.set({ [STORAGE_KEYS.SESSIONS]: sessions }, () => {
+            if (chrome.runtime.lastError) {
+              reject(chrome.runtime.lastError);
+            } else {
+              resolve();
+            }
+          });
+        });
       });
-    });
-  });
+    }
+  } catch (error) {
+    console.error('Failed to rename session:', error);
+    return Promise.reject(error);
+  }
 }
 
 async function resumeSession(sessionId) {
-  return new Promise((resolve, reject) => {
+  return new Promise(async (resolve, reject) => {
     // Don't allow resuming if already recording
     if (isRecording && currentSession) {
       reject('Cannot resume session while another session is active. Please stop the current session first.');
       return;
     }
     
-    chrome.storage.local.get([STORAGE_KEYS.SESSIONS], (result) => {
-      const sessions = result[STORAGE_KEYS.SESSIONS] || [];
-      const sessionIndex = sessions.findIndex(s => s.id === sessionId);
+    try {
+      // Try to get session from IndexedDB first
+      let sessionToResume = await researchTrackerDB.getSession(sessionId);
       
-      if (sessionIndex === -1) {
-        reject('Session not found');
-        return;
-      }
-      
-      const sessionToResume = sessions[sessionIndex];
-      
-      // Validate session data integrity
-      if (!validateSessionData(sessionToResume)) {
-        reject('Session data is corrupted and cannot be resumed');
-        return;
-      }
-      
-      // Remove session from completed sessions list
-      sessions.splice(sessionIndex, 1);
-      
-      // Prepare session for resumption
-      const resumedSession = {
-        ...sessionToResume,
-        endTime: null, // Clear end time
-        isPaused: false
-      };
-      
-      // Add session_resumed event
-      const resumeEvent = {
-        type: 'session_resumed',
-        timestamp: new Date().toISOString(),
-        previousEndTime: sessionToResume.endTime
-      };
-      
-      resumedSession.events.push(resumeEvent);
-      
-      // Set as current session
-      currentSession = resumedSession;
-      isRecording = true;
-      
-      // Save updated state
-      chrome.storage.local.set({ 
-        [STORAGE_KEYS.IS_RECORDING]: true,
-        [STORAGE_KEYS.CURRENT_SESSION]: currentSession,
-        [STORAGE_KEYS.SESSIONS]: sessions,
-        [STORAGE_KEYS.LAST_SAVE_TIMESTAMP]: Date.now()
-      }, () => {
-        if (chrome.runtime.lastError) {
-          reject(chrome.runtime.lastError);
-        } else {
-          // Set up listeners and autosave
-          setupRecordingListeners();
-          startAutosave();
-          updateBadge();
+      if (!sessionToResume) {
+        // Fall back to chrome.storage if not found in IndexedDB
+        chrome.storage.local.get([STORAGE_KEYS.SESSIONS], (result) => {
+          const sessions = result[STORAGE_KEYS.SESSIONS] || [];
+          const sessionIndex = sessions.findIndex(s => s && s.id === sessionId);
           
-          console.log('Session resumed:', sessionId);
-          resolve();
-        }
-      });
-    });
+          if (sessionIndex === -1) {
+            reject('Session not found');
+            return;
+          }
+          
+          sessionToResume = sessions[sessionIndex];
+          processSessionResume(sessionToResume, sessionIndex, sessions, resolve, reject);
+        });
+        return;
+      }
+      
+      // Session found in IndexedDB, delete it from there and continue
+      await researchTrackerDB.deleteSession(sessionId);
+      processSessionResume(sessionToResume, -1, [], resolve, reject);
+    } catch (error) {
+      console.error('Error resuming session:', error);
+      reject(error);
+    }
+  });
+}
+
+// Helper function to process session resumption
+function processSessionResume(sessionToResume, sessionIndex, sessions, resolve, reject) {
+  // Validate session data integrity
+  if (!validateSessionData(sessionToResume)) {
+    reject('Session data is corrupted and cannot be resumed');
+    return;
+  }
+  
+  // Remove session from completed sessions list if it came from chrome.storage
+  if (sessionIndex >= 0) {
+    sessions.splice(sessionIndex, 1);
+  }
+  
+  // Prepare session for resumption
+  const resumedSession = {
+    ...sessionToResume,
+    endTime: null, // Clear end time
+    isPaused: false
+  };
+  
+  // Add session_resumed event
+  const resumeEvent = {
+    type: 'session_resumed',
+    timestamp: new Date().toISOString(),
+    previousEndTime: sessionToResume.endTime
+  };
+  
+  resumedSession.events.push(resumeEvent);
+  
+  // Set as current session
+  currentSession = resumedSession;
+  isRecording = true;
+  
+  // Save updated state
+  chrome.storage.local.set({ 
+    [STORAGE_KEYS.IS_RECORDING]: true,
+    [STORAGE_KEYS.CURRENT_SESSION]: currentSession,
+    [STORAGE_KEYS.SESSIONS]: sessions,
+    [STORAGE_KEYS.LAST_SAVE_TIMESTAMP]: Date.now()
+  }, () => {
+    if (chrome.runtime.lastError) {
+      reject(chrome.runtime.lastError);
+    } else {
+      // Set up listeners and autosave
+      setupRecordingListeners();
+      startAutosave();
+      updateBadge();
+      
+      console.log('Session resumed:', sessionToResume.id);
+      resolve();
+    }
   });
 }
 
@@ -3136,7 +3175,7 @@ function processSessionForExport(session, format, resolve, reject) {
         session.pageVisits = session.pageVisits.map(visit => {
           if (visit.metadataId && metadataObjects[visit.metadataId]) {
             const metadataObj = metadataObjects[visit.metadataId];
-            const sessionData = metadataObj.sessions[sessionId] || {};
+            const sessionData = metadataObj.sessions[session.id] || {};
             
             // Merge metadata with session-specific notes
             return {
@@ -3156,7 +3195,7 @@ function processSessionForExport(session, format, resolve, reject) {
         session.events = session.events.map(event => {
           if (event.type === 'pageVisit' && event.metadataId && metadataObjects[event.metadataId]) {
             const metadataObj = metadataObjects[event.metadataId];
-            const sessionData = metadataObj.sessions[sessionId] || {};
+            const sessionData = metadataObj.sessions[session.id] || {};
             
             // Merge metadata with session-specific notes
             return {
