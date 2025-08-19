@@ -1,3 +1,6 @@
+// Import IndexedDB module
+importScripts('./indexeddb.js');
+
 // Storage keys
 const STORAGE_KEYS = {
   IS_RECORDING: 'isRecording',
@@ -1222,6 +1225,19 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       })();
       return true; // Keep the message channel open for async response
       break;
+      
+    case 'clearCorruptedData':
+      (async () => {
+        try {
+          const result = await clearCorruptedData();
+          sendResponse({ success: true, ...result });
+        } catch (e) {
+          console.error('Error clearing corrupted data:', e);
+          sendResponse({ success: false, error: e.message });
+        }
+      })();
+      return true; // Keep the message channel open for async response
+      break;
   }
 });
 
@@ -1318,14 +1334,11 @@ function stopRecording() {
       };
       currentSession.events.push(endEvent);
       
-      // Save session to storage
-      chrome.storage.local.get([STORAGE_KEYS.SESSIONS], (result) => {
-        const sessions = result[STORAGE_KEYS.SESSIONS] || [];
-        sessions.push(currentSession);
-        
+      // Save session to IndexedDB instead of chrome.storage
+      researchTrackerDB.saveSession(currentSession).then(() => {
+        // Clear current session from chrome.storage
         chrome.storage.local.set({ 
           [STORAGE_KEYS.IS_RECORDING]: false,
-          [STORAGE_KEYS.SESSIONS]: sessions,
           [STORAGE_KEYS.CURRENT_SESSION]: null,
           [STORAGE_KEYS.LAST_SAVE_TIMESTAMP]: null,
           [STORAGE_KEYS.LAST_ACTIVITY_TIMESTAMP]: null
@@ -1342,6 +1355,27 @@ function stopRecording() {
           
           // Resolve with the saved session
           resolve(savedSession);
+        });
+      }).catch(error => {
+        console.error('Failed to save session to IndexedDB:', error);
+        // Fall back to chrome.storage if IndexedDB fails
+        chrome.storage.local.get([STORAGE_KEYS.SESSIONS], (result) => {
+          const sessions = result[STORAGE_KEYS.SESSIONS] || [];
+          sessions.push(currentSession);
+          
+          chrome.storage.local.set({ 
+            [STORAGE_KEYS.IS_RECORDING]: false,
+            [STORAGE_KEYS.SESSIONS]: sessions,
+            [STORAGE_KEYS.CURRENT_SESSION]: null,
+            [STORAGE_KEYS.LAST_SAVE_TIMESTAMP]: null,
+            [STORAGE_KEYS.LAST_ACTIVITY_TIMESTAMP]: null
+          }, () => {
+            const savedSession = { ...currentSession };
+            currentSession = null;
+            removeRecordingListeners();
+            chrome.action.setBadgeText({ text: '' });
+            resolve(savedSession);
+          });
         });
       });
     } else {
@@ -2865,23 +2899,33 @@ function generateSessionId() {
 }
 
 async function getSessions() {
-  return new Promise((resolve) => {
-    chrome.storage.local.get([STORAGE_KEYS.SESSIONS], (result) => {
-      const sessions = result[STORAGE_KEYS.SESSIONS] || [];
-      // Return summary info only
-      const sessionSummaries = sessions.map(session => ({
-        id: session.id,
-        name: session.name || `Research Session ${new Date(session.startTime).toLocaleDateString()}`,
-        startTime: session.startTime,
-        endTime: session.endTime,
-        events: session.events.length,
-        searches: session.searches.length,
-        pageVisits: session.pageVisits.length
-      }));
-      
-      resolve(sessionSummaries);
+  try {
+    // Get sessions from IndexedDB
+    const sessionSummaries = await researchTrackerDB.getAllSessions();
+    return sessionSummaries;
+  } catch (error) {
+    console.error('Failed to get sessions from IndexedDB:', error);
+    // Fall back to chrome.storage if IndexedDB fails
+    return new Promise((resolve) => {
+      chrome.storage.local.get([STORAGE_KEYS.SESSIONS], (result) => {
+        const sessions = result[STORAGE_KEYS.SESSIONS] || [];
+        // Filter out null/corrupted sessions and return summary info only
+        const sessionSummaries = sessions
+          .filter(session => session && session.id) // Skip null or invalid sessions
+          .map(session => ({
+            id: session.id,
+            name: session.name || `Research Session ${new Date(session.startTime).toLocaleDateString()}`,
+            startTime: session.startTime,
+            endTime: session.endTime,
+            events: session.events ? session.events.length : 0,
+            searches: session.searches ? session.searches.length : 0,
+            pageVisits: session.pageVisits ? session.pageVisits.length : 0
+          }));
+        
+        resolve(sessionSummaries);
+      });
     });
-  });
+  }
 }
 
 async function renameSession(sessionId, newName) {
@@ -3011,44 +3055,81 @@ function validateSessionData(session) {
 }
 
 async function deleteSession(sessionId) {
-  return new Promise((resolve, reject) => {
-    chrome.storage.local.get([STORAGE_KEYS.SESSIONS], (result) => {
-      const sessions = result[STORAGE_KEYS.SESSIONS] || [];
-      const sessionIndex = sessions.findIndex(s => s.id === sessionId);
-      
-      if (sessionIndex === -1) {
-        reject('Session not found');
-        return;
-      }
-      
-      // Remove the session
-      sessions.splice(sessionIndex, 1);
-      
-      // Save back to storage
-      chrome.storage.local.set({ [STORAGE_KEYS.SESSIONS]: sessions }, () => {
-        if (chrome.runtime.lastError) {
-          reject(chrome.runtime.lastError);
-        } else {
-          resolve();
+  try {
+    // Delete from IndexedDB
+    await researchTrackerDB.deleteSession(sessionId);
+    return Promise.resolve();
+  } catch (error) {
+    console.error('Failed to delete session from IndexedDB:', error);
+    // Fall back to chrome.storage if IndexedDB fails
+    return new Promise((resolve, reject) => {
+      chrome.storage.local.get([STORAGE_KEYS.SESSIONS], (result) => {
+        const sessions = result[STORAGE_KEYS.SESSIONS] || [];
+        const sessionIndex = sessions.findIndex(s => s.id === sessionId);
+        
+        if (sessionIndex === -1) {
+          reject('Session not found');
+          return;
         }
+        
+        // Remove the session
+        sessions.splice(sessionIndex, 1);
+        
+        // Save back to storage
+        chrome.storage.local.set({ [STORAGE_KEYS.SESSIONS]: sessions }, () => {
+          if (chrome.runtime.lastError) {
+            reject(chrome.runtime.lastError);
+          } else {
+            resolve();
+          }
+        });
       });
     });
-  });
+  }
 }
 
 async function exportSession(sessionId, format = 'json') {
-  return new Promise((resolve, reject) => {
-    chrome.storage.local.get([STORAGE_KEYS.SESSIONS, STORAGE_KEYS.METADATA_OBJECTS], async (result) => {
-      const sessions = result[STORAGE_KEYS.SESSIONS] || [];
-      const metadataObjects = result[STORAGE_KEYS.METADATA_OBJECTS] || {};
-      
-      // Deep clone the session to avoid modifying the original
-      const session = JSON.parse(JSON.stringify(sessions.find(s => s.id === sessionId)));
+  return new Promise(async (resolve, reject) => {
+    try {
+      // Try to get session from IndexedDB first
+      let session = await researchTrackerDB.getSession(sessionId);
       
       if (!session) {
-        reject('Session not found');
+        // Fall back to chrome.storage if not found in IndexedDB
+        chrome.storage.local.get([STORAGE_KEYS.SESSIONS], (result) => {
+          const sessions = result[STORAGE_KEYS.SESSIONS] || [];
+          session = sessions.find(s => s.id === sessionId);
+          
+          if (!session) {
+            reject('Session not found');
+            return;
+          }
+          
+          processSessionForExport(session, format, resolve, reject);
+        });
         return;
       }
+      
+      processSessionForExport(session, format, resolve, reject);
+    } catch (error) {
+      console.error('Failed to get session from IndexedDB:', error);
+      reject(error);
+    }
+  });
+}
+
+// Helper function to process session for export
+function processSessionForExport(session, format, resolve, reject) {
+  chrome.storage.local.get([STORAGE_KEYS.METADATA_OBJECTS], async (result) => {
+    const metadataObjects = result[STORAGE_KEYS.METADATA_OBJECTS] || {};
+    
+    // Deep clone the session to avoid modifying the original
+    session = JSON.parse(JSON.stringify(session));
+    
+    if (!session) {
+      reject('Session not found');
+      return;
+    }
       
       // Resolve metadata objects for page visits
       if (session.pageVisits) {
@@ -3336,6 +3417,50 @@ function formatTimestamp(isoString) {
   } catch (e) {
     return isoString;
   }
+}
+
+// Cleanup function to clear corrupted data from chrome.storage
+async function clearCorruptedData() {
+  return new Promise((resolve, reject) => {
+    console.log('Starting cleanup of corrupted data...');
+    
+    chrome.storage.local.get([STORAGE_KEYS.SESSIONS], (result) => {
+      if (chrome.runtime.lastError) {
+        console.error('Error reading storage:', chrome.runtime.lastError);
+        reject(chrome.runtime.lastError);
+        return;
+      }
+      
+      const sessions = result[STORAGE_KEYS.SESSIONS] || [];
+      console.log(`Found ${sessions.length} sessions in chrome.storage`);
+      
+      // Filter out corrupted sessions
+      const validSessions = sessions.filter(session => {
+        if (!session || !session.id) {
+          console.log('Removing corrupted session (null or missing ID)');
+          return false;
+        }
+        if (!validateSessionData(session)) {
+          console.log('Removing invalid session:', session.id);
+          return false;
+        }
+        return true;
+      });
+      
+      console.log(`${validSessions.length} valid sessions remaining`);
+      
+      // Clear the sessions array in chrome.storage since we're moving to IndexedDB
+      chrome.storage.local.remove([STORAGE_KEYS.SESSIONS], () => {
+        if (chrome.runtime.lastError) {
+          console.error('Error clearing sessions:', chrome.runtime.lastError);
+          reject(chrome.runtime.lastError);
+        } else {
+          console.log('Successfully cleared sessions from chrome.storage');
+          resolve({ removed: sessions.length - validSessions.length, valid: validSessions });
+        }
+      });
+    });
+  });
 }
 
 // Window management functions

@@ -5,6 +5,7 @@
   "description": "Track and export your research process, including searches and webpage visits",
   "permissions": [
     "storage",
+    "unlimitedStorage",
     "tabs",
     "webNavigation",
     "scripting",
