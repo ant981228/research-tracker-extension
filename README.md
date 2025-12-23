@@ -210,6 +210,7 @@ Enhanced metadata extraction for:
 - Brookings Institution, RAND Corporation, Pew Research Center
 - Cato Institute, Heritage Foundation, Urban Institute
 - Carnegie Endowment, Atlantic Council, Hudson Institute
+- Center for Strategic and International Studies (CSIS)
 - Center for a New American Security (CNAS)
 - American Progress, Hoover Institution
 - Tax Policy Center, Baker Institute
