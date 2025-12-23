@@ -441,30 +441,9 @@ function init() {
   closeHelpBtn.addEventListener('click', closeHelpModal);
 
   // All sessions modal event listeners
-  console.log('Setting up all sessions modal listeners', {
-    viewAllSessionsBtn,
-    closeAllSessionsModalBtn,
-    modal: allSessionsModal
-  });
-
-  if (viewAllSessionsBtn) {
-    viewAllSessionsBtn.addEventListener('click', openAllSessionsModal);
-  } else {
-    console.error('viewAllSessionsBtn not found!');
-  }
-
-  if (closeAllSessionsModalBtn) {
-    closeAllSessionsModalBtn.addEventListener('click', closeAllSessionsModal);
-  } else {
-    console.error('closeAllSessionsModalBtn not found!');
-  }
-
-  const closeAllSessionsBtn = document.getElementById('close-all-sessions-btn');
-  if (closeAllSessionsBtn) {
-    closeAllSessionsBtn.addEventListener('click', closeAllSessionsModal);
-  } else {
-    console.error('close-all-sessions-btn not found!');
-  }
+  viewAllSessionsBtn.addEventListener('click', openAllSessionsModal);
+  closeAllSessionsModalBtn.addEventListener('click', closeAllSessionsModal);
+  document.getElementById('close-all-sessions-btn').addEventListener('click', closeAllSessionsModal);
   
   // Citation format dropdown change handler
   citationFormatSelect.addEventListener('change', (e) => {
@@ -2643,7 +2622,6 @@ function openAllSessionsModal() {
 }
 
 function closeAllSessionsModal() {
-  console.log('closeAllSessionsModal called');
   hideCurrentModal();
 }
 
