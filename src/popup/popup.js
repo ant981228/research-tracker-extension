@@ -91,6 +91,13 @@ let helpModal;
 let closeHelpModalBtn;
 let closeHelpBtn;
 
+// All Sessions Modal
+let allSessionsModal;
+let closeAllSessionsModalBtn;
+let viewAllSessionsBtn;
+let allSessionsLoading;
+let allSessionsList;
+
 // Current session state
 let selectedPageUrl = null;
 let addNoteInProgress = false;
@@ -317,6 +324,13 @@ function init() {
   helpModal = document.getElementById('help-modal');
   closeHelpModalBtn = document.querySelector('.close-help-modal');
   closeHelpBtn = document.getElementById('close-help-btn');
+
+  // Initialize all sessions modal elements
+  allSessionsModal = document.getElementById('all-sessions-modal');
+  closeAllSessionsModalBtn = document.querySelector('.close-all-sessions-modal');
+  viewAllSessionsBtn = document.getElementById('view-all-sessions-btn');
+  allSessionsLoading = document.getElementById('all-sessions-loading');
+  allSessionsList = document.getElementById('all-sessions-list');
   
   // Action buttons
   viewPagesBtn = document.getElementById('view-pages-btn');
@@ -425,6 +439,11 @@ function init() {
   
   closeHelpModalBtn.addEventListener('click', closeHelpModal);
   closeHelpBtn.addEventListener('click', closeHelpModal);
+
+  // All sessions modal event listeners
+  viewAllSessionsBtn.addEventListener('click', openAllSessionsModal);
+  closeAllSessionsModalBtn.addEventListener('click', closeAllSessionsModal);
+  document.getElementById('close-all-sessions-btn').addEventListener('click', closeAllSessionsModal);
   
   // Citation format dropdown change handler
   citationFormatSelect.addEventListener('change', (e) => {
@@ -1294,16 +1313,19 @@ function loadSessions() {
 function displaySessions(sessions) {
   // Clear previous sessions
   sessionsList.innerHTML = '';
-  
+
   if (!sessions || sessions.length === 0) {
     sessionsList.appendChild(noSessionsMsg);
     return;
   }
-  
+
   // Sort sessions by start time (newest first)
   sessions.sort((a, b) => new Date(b.startTime) - new Date(a.startTime));
-  
-  sessions.forEach(session => {
+
+  // Only show first 20 sessions in main popup (user can see all in modal)
+  const sessionsToDisplay = sessions.slice(0, 20);
+
+  sessionsToDisplay.forEach(session => {
     const sessionItem = document.createElement('div');
     sessionItem.className = 'session-item';
     sessionItem.dataset.sessionId = session.id;
@@ -2585,6 +2607,146 @@ function closeSettingsModal() {
 
 function closeHelpModal() {
   hideCurrentModal();
+}
+
+// All Sessions Modal Functions
+function openAllSessionsModal() {
+  showModal(allSessionsModal, 'all-sessions');
+  loadAllSessions();
+}
+
+function closeAllSessionsModal() {
+  hideCurrentModal();
+}
+
+function loadAllSessions() {
+  // Show loading spinner
+  allSessionsLoading.style.display = 'block';
+  allSessionsList.innerHTML = '';
+
+  chrome.runtime.sendMessage({ action: 'getSessions' }, response => {
+    // Hide loading spinner
+    allSessionsLoading.style.display = 'none';
+
+    if (chrome.runtime.lastError) {
+      console.error(chrome.runtime.lastError);
+      allSessionsList.innerHTML = '<div class="error">Error loading sessions</div>';
+      return;
+    }
+
+    if (response.success) {
+      displayAllSessions(response.sessions);
+    } else {
+      allSessionsList.innerHTML = '<div class="error">Failed to load sessions</div>';
+    }
+  });
+}
+
+function displayAllSessions(sessions) {
+  // Clear previous content
+  allSessionsList.innerHTML = '';
+
+  if (!sessions || sessions.length === 0) {
+    allSessionsList.innerHTML = '<p style="text-align: center; color: #666; padding: 20px;">No completed sessions yet</p>';
+    return;
+  }
+
+  // Sort sessions by start time (newest first)
+  sessions.sort((a, b) => new Date(b.startTime) - new Date(a.startTime));
+
+  // Display all sessions (no limit in modal)
+  sessions.forEach(session => {
+    const sessionItem = createSessionItem(session);
+    allSessionsList.appendChild(sessionItem);
+  });
+}
+
+function createSessionItem(session) {
+  const sessionItem = document.createElement('div');
+  sessionItem.className = 'session-item';
+  sessionItem.dataset.sessionId = session.id;
+
+  const startDate = new Date(session.startTime);
+  const endDate = session.endTime ? new Date(session.endTime) : null;
+
+  const sessionHeader = document.createElement('div');
+  sessionHeader.className = 'session-header';
+
+  const sessionTitle = document.createElement('div');
+  sessionTitle.className = 'session-title';
+  sessionTitle.textContent = session.name || `Session: ${formatDate(startDate)}`;
+  sessionTitle.title = 'Click to rename';
+  sessionTitle.addEventListener('click', function() {
+    const currentName = this.textContent;
+    const newName = prompt('Enter a new name for this session:', currentName);
+
+    if (newName && newName.trim() !== '' && newName !== currentName) {
+      chrome.runtime.sendMessage({
+        action: 'renameSession',
+        sessionId: session.id,
+        newName: newName.trim()
+      }, response => {
+        if (response.success) {
+          this.textContent = newName.trim();
+          loadSessions(); // Refresh main popup list
+          loadAllSessions(); // Refresh modal list
+        }
+      });
+    }
+  });
+
+  sessionHeader.appendChild(sessionTitle);
+
+  const sessionDetails = document.createElement('div');
+  sessionDetails.className = 'session-details';
+
+  const duration = endDate
+    ? `Duration: ${formatDuration(startDate, endDate)}`
+    : 'Not completed';
+
+  sessionDetails.textContent = `${formatDate(startDate)} | ${duration} | ${session.searches} searches | ${session.pageVisits} pages`;
+
+  const sessionActions = document.createElement('div');
+  sessionActions.className = 'session-actions';
+
+  const resumeBtn = document.createElement('button');
+  resumeBtn.className = 'resume-btn';
+  resumeBtn.textContent = 'Resume';
+  resumeBtn.addEventListener('click', () => {
+    resumeSession(session.id);
+    closeAllSessionsModal();
+  });
+
+  const exportJsonBtn = document.createElement('button');
+  exportJsonBtn.className = 'export-btn';
+  exportJsonBtn.textContent = 'Export JSON';
+  exportJsonBtn.addEventListener('click', () => exportSession(session.id, 'json'));
+
+  const exportTxtBtn = document.createElement('button');
+  exportTxtBtn.className = 'export-btn';
+  exportTxtBtn.textContent = 'Export TXT';
+  exportTxtBtn.addEventListener('click', () => exportSession(session.id, 'txt'));
+
+  const deleteBtn = document.createElement('button');
+  deleteBtn.className = 'delete-btn';
+  deleteBtn.textContent = 'Delete';
+  deleteBtn.addEventListener('click', () => {
+    if (confirm(`Are you sure you want to delete this session?\n\n"${session.name || 'Unnamed session'}"\n\nThis action cannot be undone.`)) {
+      deleteSession(session.id);
+      loadAllSessions(); // Refresh modal list
+    }
+  });
+
+  sessionActions.appendChild(resumeBtn);
+  sessionActions.appendChild(exportJsonBtn);
+  sessionActions.appendChild(exportTxtBtn);
+  sessionActions.appendChild(deleteBtn);
+
+  sessionItem.appendChild(sessionHeader);
+  sessionItem.appendChild(sessionDetails);
+  sessionItem.appendChild(sessionActions);
+
+  return sessionItem;
 }
 
 // Export all metadata functionality

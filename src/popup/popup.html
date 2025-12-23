@@ -361,7 +361,7 @@
         <div class="modal-content">
           <span class="close-help-modal">&times;</span>
           <h3>Help</h3>
-          
+
           <div class="help-section">
             <h4>Keyboard Shortcuts</h4>
             <ul class="shortcuts-list">
@@ -377,7 +377,7 @@
               <li><code>Ctrl+Q</code> - Copy citation for current page</li>
             </ul>
           </div>
-          
+
           <div class="help-section">
             <h4>Core Functions</h4>
             <ul>
@@ -388,7 +388,7 @@
               <li><strong>Export Sessions:</strong> Save your research data as JSON or TXT files</li>
             </ul>
           </div>
-          
+
           <div class="help-section">
             <h4>Tips</h4>
             <ul>
@@ -397,18 +397,38 @@
               <li>Sessions are saved locally and persist between browser restarts</li>
             </ul>
           </div>
-          
+
           <div class="modal-buttons">
             <button id="close-help-btn" class="action-btn secondary-btn">Close</button>
           </div>
         </div>
       </div>
-    
+
+      <!-- All Sessions Modal -->
+      <div id="all-sessions-modal" class="modal hidden" style="display: none;">
+        <div class="modal-content wide-modal">
+          <span class="close-all-sessions-modal">&times;</span>
+          <h3>All Sessions</h3>
+
+          <div id="all-sessions-loading" style="text-align: center; padding: 40px; display: none;">
+            <div class="spinner"></div>
+            <p style="margin-top: 20px; color: #666;">Loading sessions...</p>
+          </div>
+
+          <div id="all-sessions-list" class="history-list modal-list"></div>
+
+          <div class="modal-buttons">
+            <button id="close-all-sessions-btn" class="action-btn secondary-btn">Close</button>
+          </div>
+        </div>
+      </div>
+
     <div id="sessions-section" class="section">
       <h2>Previous Sessions</h2>
       <div id="sessions-list">
         <p id="no-sessions-msg">No completed sessions yet</p>
       </div>
+      <button id="view-all-sessions-btn" class="action-btn secondary-btn" style="width: 100%; margin-top: 10px;">View All Sessions</button>
     </div>
   </div>
   
