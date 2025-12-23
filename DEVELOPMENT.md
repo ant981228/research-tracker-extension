@@ -63,35 +63,33 @@ The popup UI provides:
 - Session history
 - Export functionality
 
-## Storage Architecture: Hybrid Chrome Storage + IndexedDB
+## Storage Architecture: Chrome Storage + IndexedDB
 
 ### Background
 
-The extension was migrated from a pure Chrome storage approach to a hybrid storage system to address several critical issues:
+The extension uses a dual-storage approach to optimize for different data access patterns:
 
-1. **Storage Quota Exceeded**: Chrome's local storage had a 10MB limit that was being exceeded by large research sessions
-2. **Corrupted Session Data**: Partial writes during quota exceeded errors resulted in null session objects
-3. **Performance Issues**: Loading many large sessions from Chrome storage was slow
-4. **Recording Failures**: Unable to stop recording when storage was full
+1. **Chrome Storage Issues**: Chrome's local storage had a 10MB limit that could be exceeded by large research sessions
+2. **Performance Requirements**: Need fast access to current session and recording state
+3. **Scalability**: Need unlimited storage for historical sessions
 
-### Migration Strategy
+### Storage Strategy
 
-The migration implements a **hybrid storage approach**:
+The extension implements a **dual-storage approach**:
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│                    HYBRID STORAGE                       │
+│                   DUAL STORAGE                          │
 ├─────────────────────────────────────────────────────────┤
 │  Chrome Storage (chrome.storage.local)                 │
 │  ├── Current active session (fast access)              │
 │  ├── Recording state flags                             │
 │  ├── Activity timestamps                               │
-│  └── Current session metadata                          │
+│  └── Metadata objects cache                            │
 ├─────────────────────────────────────────────────────────┤
 │  IndexedDB (unlimited storage)                         │
 │  ├── Completed sessions (historical data)              │
-│  ├── Session metadata with indexing                    │
-│  └── Legacy session data (if migration needed)         │
+│  └── Session metadata with indexing                    │
 └─────────────────────────────────────────────────────────┘
 ```
 
@@ -115,14 +113,8 @@ Database: "ResearchTrackerDB" (version 1)
     └── Index: "sessionId" (for session associations)
 ```
 
-#### 3. Session Lifecycle Changes
+#### 3. Session Lifecycle
 
-**Previous Flow:**
-```
-Start Recording → Store in chrome.storage → Autosave to chrome.storage → Stop Recording → Keep in chrome.storage
-```
-
-**New Hybrid Flow:**
 ```
 Start Recording → Store in chrome.storage (current session)
                 ↓
@@ -131,41 +123,38 @@ Start Recording → Store in chrome.storage (current session)
             Stop Recording → Move to IndexedDB → Clear from chrome.storage
 ```
 
-#### 4. Data Migration Approach
+#### 4. Function Updates
 
-**No Legacy Migration Required:**
-- Extension was pre-launch, so existing data cleanup was acceptable
-- Implemented `clearCorruptedData()` function to clean existing Chrome storage
-- Fresh start approach simplified implementation
-
-#### 5. Function Updates
-
-**Session Management Functions Updated:**
-- `stopRecording()`: Now saves completed sessions to IndexedDB
-- `getSessions()`: Reads from IndexedDB with chrome.storage fallback  
-- `exportSession()`: Retrieves sessions from IndexedDB first
+**Session Management Functions:**
+- `stopRecording()`: Saves completed sessions to IndexedDB
+- `getSessions()`: Reads from IndexedDB only
+- `exportSession()`: Retrieves sessions from IndexedDB
 - `deleteSession()`: Removes from IndexedDB
 - `resumeSession()`: Retrieves from IndexedDB and moves back to chrome.storage
 - `renameSession()`: Updates sessions in IndexedDB
 
 **Error Handling:**
-- All IndexedDB operations have chrome.storage fallbacks
-- Graceful degradation if IndexedDB fails
-- Comprehensive error logging for debugging
+- All IndexedDB operations include comprehensive error logging
+- Failed operations reject with error messages
+- IndexedDB initialization happens automatically on module load
 
-#### 6. Performance Benefits
+#### 5. Performance Benefits
 
-**Before Migration:**
-- Single storage location caused bottlenecks
-- Large session arrays slowed down all operations
-- Storage quota errors prevented recording
-- Corrupted data broke session loading
-
-**After Migration:**
+**Dual Storage Advantages:**
 - Fast current session access (chrome.storage)
 - Unlimited historical storage (IndexedDB)
 - Indexed queries for fast session retrieval
 - Isolated storage prevents cascading failures
+- No storage quota errors
+
+#### 6. Migration History
+
+**Note**: Prior to v1.0 publication, migration code was removed from the extension:
+- No users existed before IndexedDB implementation
+- Migration functions removed in commit 9d015ae (December 2025)
+- All new users start with IndexedDB from installation
+- Cleaner codebase without legacy fallback paths
+- Migration code preserved in git history if needed for reference
 
 ### Development Considerations
 
@@ -190,8 +179,8 @@ await researchTrackerDB.deleteSession(sessionId)
 
 #### Adding New Session Operations
 
-1. **Always check IndexedDB first** for completed sessions
-2. **Implement chrome.storage fallback** for reliability
+1. **Use IndexedDB for completed sessions** (all historical data)
+2. **Use chrome.storage for current session** (active recording only)
 3. **Use proper error handling** with try/catch blocks
 4. **Log operations** for debugging
 
@@ -199,17 +188,15 @@ Example pattern:
 ```javascript
 async function newSessionOperation(sessionId) {
   try {
-    // Try IndexedDB first
-    let result = await researchTrackerDB.someOperation(sessionId);
-    if (result) return result;
-    
-    // Fall back to chrome.storage
-    return new Promise((resolve, reject) => {
-      chrome.storage.local.get([STORAGE_KEYS.SESSIONS], (result) => {
-        // Handle chrome.storage operation
-        // ...
-      });
-    });
+    // Access IndexedDB directly for completed sessions
+    const session = await researchTrackerDB.getSession(sessionId);
+    if (!session) {
+      throw new Error('Session not found');
+    }
+
+    // Perform operation
+    const result = await researchTrackerDB.someOperation(sessionId);
+    return result;
   } catch (error) {
     console.error('Operation failed:', error);
     throw error;
@@ -231,18 +218,18 @@ To modify the IndexedDB schema:
 #### Common Issues:
 1. **IndexedDB not initializing**: Check browser console for errors
 2. **Sessions not appearing**: Verify IndexedDB operations in DevTools → Application → IndexedDB
-3. **Performance degradation**: Check if falling back to chrome.storage frequently
-4. **Data inconsistencies**: Use `clearCorruptedData` message to reset
+3. **Performance issues**: Check browser DevTools for slow IndexedDB queries
+4. **Data inconsistencies**: Clear IndexedDB via DevTools → Application → IndexedDB → Delete Database
 
 #### Debugging Tools:
 ```javascript
-// Check IndexedDB status
-chrome.runtime.sendMessage({action: 'clearCorruptedData'}, console.log);
-
-// Manually query IndexedDB (in extension DevTools)
+// Manually query IndexedDB (in extension background script DevTools)
 researchTrackerDB.getAllSessions().then(console.log);
 
-// Check chrome.storage usage
+// Get specific session
+researchTrackerDB.getSession('session_id_here').then(console.log);
+
+// Check chrome.storage usage (current session only)
 chrome.storage.local.get(null, console.log);
 ```
 
