@@ -51,6 +51,20 @@ Research Tracker helps you document your research process by automatically track
 
 ## Installation
 
+### Option 1: Install from ZIP file (Recommended for most users)
+
+1. Download the latest release ZIP file
+2. Extract the ZIP file to a permanent location on your computer (do not delete this folder after installation)
+3. Open Chrome and navigate to `chrome://extensions/`
+4. Enable "Developer mode" in the top-right corner
+5. Click "Load unpacked"
+6. Select the extracted extension folder
+7. The Research Tracker extension should now appear in your extensions list
+
+**Important:** Keep the extracted folder in its location - deleting it will break the extension.
+
+### Option 2: Install from source (For developers)
+
 1. Clone this repository or download the source code
 2. Open Chrome and navigate to `chrome://extensions/`
 3. Enable "Developer mode" in the top-right corner
