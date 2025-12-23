@@ -99,6 +99,8 @@ Research Tracker helps you document your research process by automatically track
 - **Ctrl/Cmd+8**: Set DOI from selected text
 - **Ctrl+Q**: Copy citation for current page
 
+**Note:** The Ctrl+Q citation shortcut is interoperable with the [Fast Debate Paste utility](https://debate-decoded.ghost.io/leveling-up-verbatim/), allowing seamless integration with debate research workflows.
+
 ### Settings & Configuration
 - **Citation Settings**: Choose citation format (APA, MLA, Chicago, Harvard, IEEE, or custom)
 - **Citation Preview**: Enable/disable floating citation preview on web pages
