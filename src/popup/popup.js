@@ -116,6 +116,17 @@ let modalStack = [];
 const PENDING_EDITS_KEY = 'pendingMetadataEdits';
 let hasPendingEdits = false;
 
+// Security: Helper function to safely create HTML elements with text content
+// This prevents XSS attacks by treating all user/scraped data as plain text
+function createSafeElement(tag, className, textContent) {
+  const element = document.createElement(tag);
+  if (className) element.className = className;
+  if (textContent !== undefined && textContent !== null) {
+    element.textContent = textContent;
+  }
+  return element;
+}
+
 // Helper functions for modal management
 function showModal(modal, type) {
   // Add current modal to stack if there's one already visible
@@ -639,13 +650,18 @@ function updatePageDisplay(url) {
             `;
           }
           
-          // Display current page
-          currentPageEl.innerHTML = `
-            <div class="page-title">${pageTitle}</div>
-            <div class="page-url">${truncateUrl(tab.url)}</div>
-            <div class="page-time">Current page</div>
-            ${actionButtons}
-          `;
+          // Display current page (using safe DOM creation to prevent XSS)
+          currentPageEl.innerHTML = ''; // Clear existing content
+
+          // Create and append safe elements
+          currentPageEl.appendChild(createSafeElement('div', 'page-title', pageTitle));
+          currentPageEl.appendChild(createSafeElement('div', 'page-url', truncateUrl(tab.url)));
+          currentPageEl.appendChild(createSafeElement('div', 'page-time', 'Current page'));
+
+          // Action buttons HTML is safe (no user data), can use innerHTML
+          const actionsContainer = document.createElement('div');
+          actionsContainer.innerHTML = actionButtons;
+          currentPageEl.appendChild(actionsContainer.firstElementChild);
           
           // Set up add note button handler (if recording)
           const addNoteBtn = currentPageEl.querySelector('.add-note-btn');
@@ -717,15 +733,20 @@ function updateRecent(recentPages, recentSearches) {
       
         const pageEl = document.createElement('div');
         pageEl.className = 'page-item';
-        pageEl.innerHTML = `
-          <div class="page-title">${pageTitle}</div>
-          <div class="page-url">${truncateUrl(page.url)}</div>
-          <div class="page-time">${formatTimeDifference(page.timestamp)}</div>
-          <div class="page-actions">
-            <button class="page-action-btn add-note-btn">Add Note</button>
-            <button class="page-action-btn edit-metadata-btn">Edit Metadata</button>
-          </div>
+
+        // Use safe DOM creation to prevent XSS
+        pageEl.appendChild(createSafeElement('div', 'page-title', pageTitle));
+        pageEl.appendChild(createSafeElement('div', 'page-url', truncateUrl(page.url)));
+        pageEl.appendChild(createSafeElement('div', 'page-time', formatTimeDifference(page.timestamp)));
+
+        // Action buttons are static HTML (safe to use innerHTML)
+        const actionsDiv = document.createElement('div');
+        actionsDiv.className = 'page-actions';
+        actionsDiv.innerHTML = `
+          <button class="page-action-btn add-note-btn">Add Note</button>
+          <button class="page-action-btn edit-metadata-btn">Edit Metadata</button>
         `;
+        pageEl.appendChild(actionsDiv);
         
         // Add note button click handler
         pageEl.querySelector('.add-note-btn').addEventListener('click', (e) => {
@@ -769,18 +790,23 @@ function updateRecent(recentPages, recentSearches) {
     recentSearches.forEach(search => {
       const searchEl = document.createElement('div');
       searchEl.className = 'page-item';
-      
-      searchEl.innerHTML = `
-        <div class="search-query">"${search.query}"</div>
-        <div>
-          <span class="search-engine">${search.engine}</span>
-          <span class="page-time">${formatTimeDifference(search.timestamp)}</span>
-        </div>
-        <div class="page-actions">
-          <button class="page-action-btn add-note-btn">Add Note</button>
-          <button class="page-action-btn edit-metadata-btn">Edit Metadata</button>
-        </div>
+
+      // Use safe DOM creation to prevent XSS
+      searchEl.appendChild(createSafeElement('div', 'search-query', `"${search.query}"`));
+
+      const detailsDiv = document.createElement('div');
+      detailsDiv.appendChild(createSafeElement('span', 'search-engine', search.engine));
+      detailsDiv.appendChild(createSafeElement('span', 'page-time', formatTimeDifference(search.timestamp)));
+      searchEl.appendChild(detailsDiv);
+
+      // Action buttons are static HTML (safe to use innerHTML)
+      const actionsDiv = document.createElement('div');
+      actionsDiv.className = 'page-actions';
+      actionsDiv.innerHTML = `
+        <button class="page-action-btn add-note-btn">Add Note</button>
+        <button class="page-action-btn edit-metadata-btn">Edit Metadata</button>
       `;
+      searchEl.appendChild(actionsDiv);
       
       // Add note button click handler
       searchEl.querySelector('.add-note-btn').addEventListener('click', (e) => {
@@ -1065,16 +1091,21 @@ function updateRecentPages(recentPages) {
     
       const pageEl = document.createElement('div');
       pageEl.className = 'page-item';
-      pageEl.innerHTML = `
-        <div class="page-title">${pageTitle}</div>
-        <div class="page-url">${truncateUrl(page.url)}</div>
-        <div class="page-time">${formatTimeDifference(page.timestamp)}</div>
-        <div class="page-actions">
-          <button class="page-action-btn add-note-btn">Add Note</button>
-          <button class="page-action-btn edit-metadata-btn">Edit Metadata</button>
-          <button class="page-action-btn copy-citation-btn">Copy Citation</button>
-        </div>
+
+      // Use safe DOM creation to prevent XSS
+      pageEl.appendChild(createSafeElement('div', 'page-title', pageTitle));
+      pageEl.appendChild(createSafeElement('div', 'page-url', truncateUrl(page.url)));
+      pageEl.appendChild(createSafeElement('div', 'page-time', formatTimeDifference(page.timestamp)));
+
+      // Action buttons are static HTML (safe to use innerHTML)
+      const actionsDiv = document.createElement('div');
+      actionsDiv.className = 'page-actions';
+      actionsDiv.innerHTML = `
+        <button class="page-action-btn add-note-btn">Add Note</button>
+        <button class="page-action-btn edit-metadata-btn">Edit Metadata</button>
+        <button class="page-action-btn copy-citation-btn">Copy Citation</button>
       `;
+      pageEl.appendChild(actionsDiv);
       
       // Add note button click handler
       pageEl.querySelector('.add-note-btn').addEventListener('click', (e) => {
@@ -1131,17 +1162,20 @@ function updateRecentSearches(recentSearches) {
   recentSearches.forEach(search => {
     const searchEl = document.createElement('div');
     searchEl.className = 'page-item';
-    
-    searchEl.innerHTML = `
-      <div class="search-query">"${search.query}"</div>
-      <div>
-        <span class="search-engine">${search.engine}</span>
-        <span class="page-time">${formatTimeDifference(search.timestamp)}</span>
-      </div>
-      <div class="page-actions">
-        <button class="page-action-btn add-note-btn">Add Note</button>
-      </div>
-    `;
+
+    // Use safe DOM creation to prevent XSS
+    searchEl.appendChild(createSafeElement('div', 'search-query', `"${search.query}"`));
+
+    const detailsDiv = document.createElement('div');
+    detailsDiv.appendChild(createSafeElement('span', 'search-engine', search.engine));
+    detailsDiv.appendChild(createSafeElement('span', 'page-time', formatTimeDifference(search.timestamp)));
+    searchEl.appendChild(detailsDiv);
+
+    // Action buttons are static HTML (safe to use innerHTML)
+    const actionsDiv = document.createElement('div');
+    actionsDiv.className = 'page-actions';
+    actionsDiv.innerHTML = '<button class="page-action-btn add-note-btn">Add Note</button>';
+    searchEl.appendChild(actionsDiv);
     
     // Add note button click handler
     searchEl.querySelector('.add-note-btn').addEventListener('click', (e) => {
@@ -2663,17 +2697,29 @@ function displayMetadataSourceInfo(metadata) {
     });
   }
   
-  // Render the info items
+  // Render the info items (using safe DOM creation to prevent XSS)
+  metadataInfo.innerHTML = ''; // Clear existing content
+
   if (infoItems.length > 0) {
-    const infoHtml = infoItems.map(item => 
-      `<div style="color: ${item.color}; font-size: 0.85em; margin: 2px 0; line-height: 1.3;">
-        <span style="margin-right: 6px;">${item.icon}</span>${item.text}
-      </div>`
-    ).join('');
-    
-    metadataInfo.innerHTML = `<div style="border: 1px solid #e0e0e0; background: #f9f9f9; padding: 8px; border-radius: 4px; margin-top: 8px;">${infoHtml}</div>`;
-  } else {
-    metadataInfo.innerHTML = '';
+    const container = document.createElement('div');
+    container.style.cssText = 'border: 1px solid #e0e0e0; background: #f9f9f9; padding: 8px; border-radius: 4px; margin-top: 8px;';
+
+    infoItems.forEach(item => {
+      const itemDiv = document.createElement('div');
+      itemDiv.style.cssText = `color: ${item.color}; font-size: 0.85em; margin: 2px 0; line-height: 1.3;`;
+
+      const iconSpan = document.createElement('span');
+      iconSpan.style.marginRight = '6px';
+      iconSpan.textContent = item.icon;
+
+      const textNode = document.createTextNode(item.text);
+
+      itemDiv.appendChild(iconSpan);
+      itemDiv.appendChild(textNode);
+      container.appendChild(itemDiv);
+    });
+
+    metadataInfo.appendChild(container);
   }
 }
 

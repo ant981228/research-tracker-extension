@@ -2972,42 +2972,43 @@ async function renameSession(sessionId, newName) {
 }
 
 async function resumeSession(sessionId) {
-  return new Promise(async (resolve, reject) => {
-    // Don't allow resuming if already recording
-    if (isRecording && currentSession) {
-      reject('Cannot resume session while another session is active. Please stop the current session first.');
-      return;
-    }
-    
-    try {
-      // Try to get session from IndexedDB first
-      let sessionToResume = await researchTrackerDB.getSession(sessionId);
-      
-      if (!sessionToResume) {
-        // Fall back to chrome.storage if not found in IndexedDB
+  // Don't allow resuming if already recording
+  if (isRecording && currentSession) {
+    return Promise.reject('Cannot resume session while another session is active. Please stop the current session first.');
+  }
+
+  try {
+    // Try to get session from IndexedDB first
+    let sessionToResume = await researchTrackerDB.getSession(sessionId);
+
+    if (!sessionToResume) {
+      // Fall back to chrome.storage if not found in IndexedDB
+      return new Promise((resolve, reject) => {
         chrome.storage.local.get([STORAGE_KEYS.SESSIONS], (result) => {
           const sessions = result[STORAGE_KEYS.SESSIONS] || [];
           const sessionIndex = sessions.findIndex(s => s && s.id === sessionId);
-          
+
           if (sessionIndex === -1) {
             reject('Session not found');
             return;
           }
-          
+
           sessionToResume = sessions[sessionIndex];
           processSessionResume(sessionToResume, sessionIndex, sessions, resolve, reject);
         });
-        return;
-      }
-      
-      // Session found in IndexedDB, delete it from there and continue
-      await researchTrackerDB.deleteSession(sessionId);
-      processSessionResume(sessionToResume, -1, [], resolve, reject);
-    } catch (error) {
-      console.error('Error resuming session:', error);
-      reject(error);
+      });
     }
-  });
+
+    // Session found in IndexedDB, delete it from there and continue
+    await researchTrackerDB.deleteSession(sessionId);
+
+    return new Promise((resolve, reject) => {
+      processSessionResume(sessionToResume, -1, [], resolve, reject);
+    });
+  } catch (error) {
+    console.error('Error resuming session:', error);
+    return Promise.reject(error);
+  }
 }
 
 // Helper function to process session resumption
@@ -3104,7 +3105,7 @@ async function deleteSession(sessionId) {
     return new Promise((resolve, reject) => {
       chrome.storage.local.get([STORAGE_KEYS.SESSIONS], (result) => {
         const sessions = result[STORAGE_KEYS.SESSIONS] || [];
-        const sessionIndex = sessions.findIndex(s => s.id === sessionId);
+        const sessionIndex = sessions.findIndex(s => s && s.id === sessionId);
         
         if (sessionIndex === -1) {
           reject('Session not found');
@@ -3128,33 +3129,34 @@ async function deleteSession(sessionId) {
 }
 
 async function exportSession(sessionId, format = 'json') {
-  return new Promise(async (resolve, reject) => {
-    try {
-      // Try to get session from IndexedDB first
-      let session = await researchTrackerDB.getSession(sessionId);
-      
-      if (!session) {
-        // Fall back to chrome.storage if not found in IndexedDB
+  try {
+    // Try to get session from IndexedDB first
+    let session = await researchTrackerDB.getSession(sessionId);
+
+    if (!session) {
+      // Fall back to chrome.storage if not found in IndexedDB
+      return new Promise((resolve, reject) => {
         chrome.storage.local.get([STORAGE_KEYS.SESSIONS], (result) => {
           const sessions = result[STORAGE_KEYS.SESSIONS] || [];
-          session = sessions.find(s => s.id === sessionId);
-          
+          session = sessions.find(s => s && s.id === sessionId);
+
           if (!session) {
             reject('Session not found');
             return;
           }
-          
+
           processSessionForExport(session, format, resolve, reject);
         });
-        return;
-      }
-      
-      processSessionForExport(session, format, resolve, reject);
-    } catch (error) {
-      console.error('Failed to get session from IndexedDB:', error);
-      reject(error);
+      });
     }
-  });
+
+    return new Promise((resolve, reject) => {
+      processSessionForExport(session, format, resolve, reject);
+    });
+  } catch (error) {
+    console.error('Failed to get session from IndexedDB:', error);
+    return Promise.reject(error);
+  }
 }
 
 // Helper function to process session for export

@@ -5098,8 +5098,13 @@ async function updateCitationPreview() {
     
     // Generate citation
     const citation = generateCitationPreview(metadata, window.location.href, document.title, settings);
-    
-    contentEl.innerHTML = `<div style="font-style: italic;">${citation}</div>`;
+
+    // Use safe DOM creation to prevent XSS from scraped metadata
+    contentEl.innerHTML = ''; // Clear existing content
+    const citationDiv = document.createElement('div');
+    citationDiv.style.fontStyle = 'italic';
+    citationDiv.textContent = citation; // Safe - treats as plain text
+    contentEl.appendChild(citationDiv);
   } catch (error) {
     console.error('Error updating citation preview:', error);
     contentEl.textContent = 'Error generating citation';
