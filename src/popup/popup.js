@@ -83,6 +83,7 @@ let saveSettingsBtn;
 let cancelSettingsBtn;
 let exportAllMetadataBtn;
 let clearAllMetadataBtn;
+let debugModeCheckbox;
 
 // Help Modal Elements
 let helpBtn;
@@ -99,15 +100,23 @@ let isRecording = false;
 let isPaused = false;
 let currentSession = null;
 let currentUrl = null;
-let citationSettings = { 
-  format: 'apa', 
-  customTemplate: '', 
-  previewEnabled: false, 
+let citationSettings = {
+  format: 'apa',
+  customTemplate: '',
+  previewEnabled: false,
   excludedDomains: 'annas-archive.org, libgen.is, sci-hub.se, library.dartmouth.edu',
   replaceUrlWithDoi: false,
   replaceDatabaseUrls: false,
-  customDatabaseDomains: ''
+  customDatabaseDomains: '',
+  debugMode: false
 };
+
+// Debug logging helper - only logs when debug mode is enabled
+function debugLog(...args) {
+  if (citationSettings.debugMode) {
+    console.log('[DEBUG]', ...args);
+  }
+}
 
 // Modal management system
 let modalStack = [];
@@ -297,6 +306,7 @@ function init() {
   replaceUrlWithDoiCheckbox = document.getElementById('replace-url-with-doi');
   replaceDatabaseUrlsCheckbox = document.getElementById('replace-database-urls');
   customDatabaseDomainsInput = document.getElementById('custom-database-domains');
+  debugModeCheckbox = document.getElementById('debug-mode-enabled');
   saveSettingsBtn = document.getElementById('save-settings-btn');
   cancelSettingsBtn = document.getElementById('cancel-settings-btn');
   exportAllMetadataBtn = document.getElementById('export-all-metadata-btn');
@@ -350,9 +360,9 @@ function init() {
   viewSearchesBtn.addEventListener('click', openSearchesModal);
   
   // Metadata modal event listeners
-  console.log('DEBUG adding saveMetadata event listener to button:', saveMetadataBtn);
+  debugLog('adding saveMetadata event listener to button:', saveMetadataBtn);
   saveMetadataBtn.addEventListener('click', function(e) {
-    console.log('DEBUG save button clicked! Event:', e);
+    debugLog(' save button clicked! Event:', e);
     saveMetadata();
   });
   cancelMetadataBtn.addEventListener('click', closeMetadataModal);
@@ -1704,7 +1714,7 @@ function closeMetadataModal() {
 }
 
 function saveMetadata() {
-  console.log('DEBUG saveMetadata function called!');
+  debugLog(' saveMetadata function called!');
   
   if (!selectedPageUrl) {
     alert('No page selected.');
@@ -1713,8 +1723,8 @@ function saveMetadata() {
   }
   
   // Create metadata object directly from form fields - form is the source of truth
-  console.log('DEBUG saveMetadata - quals field value:', `"${metadataQuals.value}"`); 
-  console.log('DEBUG saveMetadata - quals field value trimmed:', `"${metadataQuals.value.trim()}"`); 
+  debugLog(' saveMetadata - quals field value:', `"${metadataQuals.value}"`); 
+  debugLog(' saveMetadata - quals field value trimmed:', `"${metadataQuals.value.trim()}"`); 
   
   const metadata = {
     title: metadataTitle.value.trim(),
@@ -1729,8 +1739,8 @@ function saveMetadata() {
     editTimestamp: new Date().toISOString()
   };
   
-  console.log('DEBUG saveMetadata - quals in metadata object:', `"${metadata.quals}"`); 
-  console.log('DEBUG saveMetadata - full metadata object:', metadata);
+  debugLog(' saveMetadata - quals in metadata object:', `"${metadata.quals}"`); 
+  debugLog(' saveMetadata - full metadata object:', metadata);
   
   // Handle the identifier field intelligently
   const identifierValue = metadataDoi.value.trim();
@@ -1981,14 +1991,14 @@ async function fetchFromIdentifier() {
         fillMetadataForm(response.metadata);
         
         // Immediately save the fetched metadata to preserve sourceIdentifier
-        console.log('DEBUG smart lookup - saving fetched metadata:', response.metadata);
+        debugLog(' smart lookup - saving fetched metadata:', response.metadata);
         chrome.runtime.sendMessage({
           action: 'updatePageMetadata',
           url: selectedPageUrl,
           metadata: response.metadata,
           isManualUpdate: false // This is from smart lookup, not user edit
         }, (saveResponse) => {
-          console.log('DEBUG smart lookup - metadata saved:', saveResponse);
+          debugLog(' smart lookup - metadata saved:', saveResponse);
         });
         
         // Close the input modal and return to metadata modal
@@ -2018,9 +2028,9 @@ async function fetchFromDoi() {
 }
 
 function fillMetadataForm(metadata) {
-  console.log('DEBUG fillMetadataForm called with metadata:', metadata);
-  console.log('DEBUG fillMetadataForm - metadata.quals:', `"${metadata.quals}"`);
-  console.log('DEBUG fillMetadataForm - metadata.abstract:', `"${metadata.abstract}"`);
+  debugLog(' fillMetadataForm called with metadata:', metadata);
+  debugLog(' fillMetadataForm - metadata.quals:', `"${metadata.quals}"`);
+  debugLog(' fillMetadataForm - metadata.abstract:', `"${metadata.abstract}"`);
   
   // Fill the form fields with the fetched metadata
   if (metadata.title) metadataTitle.value = metadata.title;
@@ -2033,14 +2043,14 @@ function fillMetadataForm(metadata) {
   
   // Handle quals field - only use actual quals field, never abstract
   if (metadata.quals) {
-    console.log('DEBUG fillMetadataForm - setting quals from metadata.quals:', `"${metadata.quals}"`);
+    debugLog(' fillMetadataForm - setting quals from metadata.quals:', `"${metadata.quals}"`);
     metadataQuals.value = metadata.quals;
   } else {
-    console.log('DEBUG fillMetadataForm - no quals found, clearing field');
+    debugLog(' fillMetadataForm - no quals found, clearing field');
     metadataQuals.value = '';
   }
   
-  console.log('DEBUG fillMetadataForm - final quals field value:', `"${metadataQuals.value}"`);
+  debugLog(' fillMetadataForm - final quals field value:', `"${metadataQuals.value}"`);
   // Handle the identifier field - show the primary identifier from sourceIdentifier or fall back to DOI
   if (metadata.sourceIdentifier && metadata.sourceIdentifier.value) {
     metadataDoi.value = metadata.sourceIdentifier.value;
@@ -2530,6 +2540,7 @@ function loadCitationSettings() {
     replaceUrlWithDoiCheckbox.checked = citationSettings.replaceUrlWithDoi || false;
     replaceDatabaseUrlsCheckbox.checked = citationSettings.replaceDatabaseUrls || false;
     customDatabaseDomainsInput.value = citationSettings.customDatabaseDomains || '';
+    debugModeCheckbox.checked = citationSettings.debugMode || false;
     
     if (citationSettings.format === 'custom') {
       customFormatSection.style.display = 'block';
@@ -2547,6 +2558,7 @@ function saveCitationSettings() {
   citationSettings.replaceUrlWithDoi = replaceUrlWithDoiCheckbox.checked;
   citationSettings.replaceDatabaseUrls = replaceDatabaseUrlsCheckbox.checked;
   citationSettings.customDatabaseDomains = customDatabaseDomainsInput.value;
+  citationSettings.debugMode = debugModeCheckbox.checked;
   
   chrome.storage.local.set({ citationSettings }, () => {
     console.log('Citation settings saved');
