@@ -82,9 +82,10 @@ Research Tracker helps you document your research process by automatically track
 4. Save the file for later analysis
 
 ### Reviewing Past Sessions
-- Click "View Past Sessions" to see all recorded sessions
-- Export any session at any time
-- Delete sessions you no longer need
+- The main popup displays your 20 most recent sessions for quick access
+- Click "View All Sessions" to see all sessions in a larger, browsable modal
+- Resume, rename, export (JSON/TXT), or delete any session
+- Sessions are stored in IndexedDB for unlimited storage capacity
 
 ### Keyboard Shortcuts
 - **Ctrl/Cmd+0**: Auto-fill metadata from DOI in selected text
@@ -104,6 +105,7 @@ Research Tracker helps you document your research process by automatically track
 - **URL Replacement**: Replace URLs with DOIs or database names in citations
 - **Custom Database Domains**: Add your own database domain mappings
 - **Excluded Domains**: Specify domains to exclude from research tracking
+- **Debug Mode**: Enable detailed console logging for troubleshooting issues
 
 ### Additional Utilities
 
