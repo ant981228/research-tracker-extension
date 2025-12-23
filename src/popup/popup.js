@@ -441,9 +441,30 @@ function init() {
   closeHelpBtn.addEventListener('click', closeHelpModal);
 
   // All sessions modal event listeners
-  viewAllSessionsBtn.addEventListener('click', openAllSessionsModal);
-  closeAllSessionsModalBtn.addEventListener('click', closeAllSessionsModal);
-  document.getElementById('close-all-sessions-btn').addEventListener('click', closeAllSessionsModal);
+  console.log('Setting up all sessions modal listeners', {
+    viewAllSessionsBtn,
+    closeAllSessionsModalBtn,
+    modal: allSessionsModal
+  });
+
+  if (viewAllSessionsBtn) {
+    viewAllSessionsBtn.addEventListener('click', openAllSessionsModal);
+  } else {
+    console.error('viewAllSessionsBtn not found!');
+  }
+
+  if (closeAllSessionsModalBtn) {
+    closeAllSessionsModalBtn.addEventListener('click', closeAllSessionsModal);
+  } else {
+    console.error('closeAllSessionsModalBtn not found!');
+  }
+
+  const closeAllSessionsBtn = document.getElementById('close-all-sessions-btn');
+  if (closeAllSessionsBtn) {
+    closeAllSessionsBtn.addEventListener('click', closeAllSessionsModal);
+  } else {
+    console.error('close-all-sessions-btn not found!');
+  }
   
   // Citation format dropdown change handler
   citationFormatSelect.addEventListener('change', (e) => {
@@ -1375,7 +1396,13 @@ function displaySessions(sessions) {
     const resumeBtn = document.createElement('button');
     resumeBtn.className = 'resume-btn';
     resumeBtn.textContent = 'Resume';
-    resumeBtn.addEventListener('click', () => resumeSession(session.id));
+    resumeBtn.addEventListener('click', () => {
+      resumeSession(session.id);
+      // Close modal if it's open
+      if (allSessionsModal && !allSessionsModal.classList.contains('hidden')) {
+        closeAllSessionsModal();
+      }
+    });
     
     const exportJsonBtn = document.createElement('button');
     exportJsonBtn.className = 'export-btn';
@@ -2616,6 +2643,7 @@ function openAllSessionsModal() {
 }
 
 function closeAllSessionsModal() {
+  console.log('closeAllSessionsModal called');
   hideCurrentModal();
 }
 
