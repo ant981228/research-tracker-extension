@@ -10,7 +10,21 @@ Enable the extension to work as both a popup and a sidebar, with:
 - User setting to choose default behavior (left-click icon)
 - Right-click context menu to always access either mode
 - Responsive UI that adapts to sidebar's variable width
+- **Dynamic metadata form layout**: Two columns at normal widths (>350px), single column at narrow widths (<350px) for optimal usability
 - Backward compatibility with older Chrome versions
+
+## Critical Design Consideration: Metadata Form Responsiveness
+
+**IMPORTANT**: The edit metadata modal uses a two-column grid layout (`.metadata-form-grid`) that works well at 400px (popup width) but becomes cramped and unusable in narrow sidebars.
+
+**Solution**: The CSS media query at `@media (max-width: 350px)` dynamically switches the metadata form from two columns to a single column. This is **critical** for usability because:
+
+1. The metadata form has 9+ fields (title, author, date, journal, pages, DOI, quals, etc.)
+2. At narrow widths (<350px), two columns make each field too narrow to read/edit
+3. Single column layout provides adequate space for field labels and input values
+4. The transition is automatic based on viewport width
+
+**Testing Priority**: When testing sidebar mode, manually resize the sidebar to various widths and open the "Edit Metadata" modal to verify the layout adapts correctly.
 
 ## Changes Required
 
@@ -230,7 +244,8 @@ body {
     grid-template-columns: 1fr;
   }
 
-  /* Single column metadata form */
+  /* CRITICAL: Single column metadata form for narrow widths */
+  /* This ensures the edit metadata modal remains usable in narrow sidebars */
   .metadata-form-grid {
     grid-template-columns: 1fr;
   }
@@ -370,7 +385,8 @@ After implementing all changes:
 - [ ] Sidebar at 400px width (default popup) - matches popup appearance
 - [ ] Sidebar at 600px width (wide) - uses extra space well
 - [ ] Popup mode still works at 400px width
-- [ ] Metadata form stacks appropriately at narrow widths
+- [ ] **Metadata form switches to single column at <350px width** (CRITICAL - test by opening edit metadata modal in narrow sidebar)
+- [ ] **Metadata form shows two columns at >350px width**
 - [ ] Session actions buttons adapt to width
 - [ ] Modals don't overflow viewport in any width
 
