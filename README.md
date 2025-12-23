@@ -123,19 +123,6 @@ Research Tracker helps you document your research process by automatically track
 - **Excluded Domains**: Specify domains to exclude from research tracking
 - **Debug Mode**: Enable detailed console logging for troubleshooting issues
 
-### Additional Utilities
-
-The extension includes additional utilities to enhance your research experience:
-
-#### Always On Top Manager
-Due to Chrome extension security limitations, the extension cannot set windows to be "always on top" directly. However, we've included an AutoHotkey script in the `/utilities/` folder that provides this functionality.
-
-To use the Always On Top Manager:
-1. Install [AutoHotkey](https://www.autohotkey.com/) on your computer
-2. Run the `AlwaysOnTopManager.ahk` script from the `/utilities/` folder
-3. Use the interface to select which windows should stay on top of others
-4. Double-click any window in the list to toggle its always-on-top state
-
 ## Privacy
 
 - All data is stored locally in your browser
