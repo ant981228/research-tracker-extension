@@ -1,6 +1,15 @@
 // Import IndexedDB module
 importScripts('./indexeddb.js');
 
+// Debug logging helper - checks settings for debug mode
+function debugLog(...args) {
+  chrome.storage.local.get(['citationSettings'], (result) => {
+    if (result.citationSettings?.debugMode) {
+      debugLog('[DEBUG]', ...args);
+    }
+  });
+}
+
 // Storage keys
 const STORAGE_KEYS = {
   IS_RECORDING: 'isRecording',
@@ -323,13 +332,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       break;
       
     case 'updatePageMetadata':
-      console.log('Received updatePageMetadata message:', message);
+      debugLog('Received updatePageMetadata message:', message);
       (async () => {
         try {
           if (message.url && message.metadata) {
             // Only process if recording is active
             if (!isRecording) {
-              console.log('Not recording, ignoring metadata update');
+              debugLog('Not recording, ignoring metadata update');
               sendResponse({ success: false, error: 'Not recording' });
               return;
             }
@@ -343,7 +352,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             
             // Protect manual edits from automatic updates
             if (isAutomaticUpdate && metadataObj.metadata.manuallyEdited) {
-              console.log('Skipping automatic update - metadata was manually edited');
+              debugLog('Skipping automatic update - metadata was manually edited');
               sendResponse({ success: false, error: 'Manual edits protected from automatic updates' });
               return;
             }
@@ -367,7 +376,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             // Update the metadata object
             await updateMetadataObject(metadataId, metadataToUpdate);
             
-            console.log('Metadata update complete for:', metadataId);
+            debugLog('Metadata update complete for:', metadataId);
             sendResponse({ success: true, metadataId });
           } else {
             console.warn('Cannot update metadata: missing URL or metadata');
@@ -632,7 +641,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       chrome.storage.local.get([STORAGE_KEYS.POPUP_WINDOW_ID], (result) => {
         const popupWindowId = result[STORAGE_KEYS.POPUP_WINDOW_ID];
         
-        console.log('getWindowInfo: stored popup window ID:', popupWindowId);
+        debugLog('getWindowInfo: stored popup window ID:', popupWindowId);
         
         // Check if this window is our popup window
         chrome.windows.getCurrent((currentWindow) => {
@@ -642,9 +651,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             return;
           }
           
-          console.log('Current window ID:', currentWindow.id, 'Popup window ID:', popupWindowId);
+          debugLog('Current window ID:', currentWindow.id, 'Popup window ID:', popupWindowId);
           const isPopout = popupWindowId && currentWindow.id === popupWindowId;
-          console.log('Window is popout:', isPopout);
+          debugLog('Window is popout:', isPopout);
           
           sendResponse({ isPopout });
         });
@@ -652,12 +661,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return true; // Indicates async response
       
     case 'createPopout':
-      console.log('Received createPopout message from popup:', message);
+      debugLog('Received createPopout message from popup:', message);
       
       try {
         createPopoutWindow(message.width || 400, message.height || 600)
           .then((window) => {
-            console.log('createPopoutWindow Promise resolved with window:', window);
+            debugLog('createPopoutWindow Promise resolved with window:', window);
             sendResponse({ success: true, windowId: window.id });
           })
           .catch(error => {
@@ -677,16 +686,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         });
       }
       
-      console.log('createPopout message handler returning true for async response');
+      debugLog('createPopout message handler returning true for async response');
       return true; // Indicates async response
       
     case 'closePopout':
-      console.log('Received closePopout message');
+      debugLog('Received closePopout message');
       
       try {
         closePopoutWindow()
           .then(() => {
-            console.log('Successfully closed popout window');
+            debugLog('Successfully closed popout window');
             sendResponse({ success: true });
           })
           .catch(error => {
@@ -706,11 +715,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         });
       }
       
-      console.log('closePopout message handler returning true for async response');
+      debugLog('closePopout message handler returning true for async response');
       return true; // Indicates async response
       
     case 'copyCitationForCurrentPage':
-      console.log('Received copyCitationForCurrentPage message');
+      debugLog('Received copyCitationForCurrentPage message');
       // Get the current active tab
       chrome.tabs.query({ active: true, currentWindow: true }, async (tabs) => {
         if (tabs.length === 0) {
@@ -1039,7 +1048,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return true; // Indicates async response
       
     case 'fetchMetadata':
-      console.log('Received fetchMetadata message:', message);
+      debugLog('Received fetchMetadata message:', message);
       (async () => {
         try {
           if (!message.identifierType || !message.identifier) {
@@ -1081,7 +1090,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       break;
       
     case 'fetchDOIMetadata':
-      console.log('Received fetchDOIMetadata message:', message);
+      debugLog('Received fetchDOIMetadata message:', message);
       (async () => {
         try {
           if (!message.doi) {
@@ -1106,7 +1115,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       break;
       
     case 'fetchIdentifierMetadata':
-      console.log('Received fetchIdentifierMetadata message:', message);
+      debugLog('Received fetchIdentifierMetadata message:', message);
       (async () => {
         try {
           if (!message.identifierType || !message.identifier) {
@@ -1285,7 +1294,7 @@ function startRecording(sessionName = '') {
               timestamp: currentTime,
               tabId: currentTab.id
             });
-            console.log('Captured current content page as first event');
+            debugLog('Captured current content page as first event');
           } catch (error) {
             console.error('Error logging current page visit:', error);
           }
@@ -1447,7 +1456,7 @@ function stopAutosave() {
 function saveCurrentSession() {
   if (!currentSession) return;
   
-  console.log('Autosaving current session...', new Date().toISOString());
+  debugLog('Autosaving current session...', new Date().toISOString());
   
   chrome.storage.local.set({ 
     [STORAGE_KEYS.CURRENT_SESSION]: currentSession,
@@ -1512,7 +1521,7 @@ function checkActivity() {
     updateBadge(inactiveTime);
     
     // Log to console for debugging
-    console.log(`Extension inactive for: ${Math.round(inactiveTime / 1000)} seconds`);
+    debugLog(`Extension inactive for: ${Math.round(inactiveTime / 1000)} seconds`);
   });
 }
 
@@ -1521,7 +1530,7 @@ function ensureStateLoaded() {
   return new Promise((resolve) => {
     // Always load from storage to ensure we have the latest state
     // This is especially important when the service worker wakes up from sleep
-    console.log('Loading state from storage...');
+    debugLog('Loading state from storage...');
     chrome.storage.local.get([
       STORAGE_KEYS.IS_RECORDING,
       STORAGE_KEYS.CURRENT_SESSION
@@ -1532,7 +1541,7 @@ function ensureStateLoaded() {
       isRecording = result[STORAGE_KEYS.IS_RECORDING] || false;
       currentSession = result[STORAGE_KEYS.CURRENT_SESSION] || null;
       
-      console.log('State loaded from storage:', { 
+      debugLog('State loaded from storage:', { 
         isRecording, 
         hasSession: !!currentSession,
         wasRecording,
@@ -1541,7 +1550,7 @@ function ensureStateLoaded() {
       
       // If we're recording and have a session, and we weren't already set up, re-setup listeners
       if (isRecording && currentSession && (!wasRecording || !hadSession)) {
-        console.log('Setting up recording listeners after state recovery');
+        debugLog('Setting up recording listeners after state recovery');
         setupRecordingListeners();
         startAutosave();
       }
@@ -1603,7 +1612,7 @@ function recoverInterruptedSession() {
       const lastSaveAge = now - (lastSaveTime || 0);
       
       if (lastSaveAge > 24 * 60 * 60 * 1000) { // 24 hours
-        console.log('Last save was more than 24 hours ago, stopping session automatically');
+        debugLog('Last save was more than 24 hours ago, stopping session automatically');
         stopRecording();
         return;
       }
@@ -1614,7 +1623,7 @@ function recoverInterruptedSession() {
       // Setup listeners again
       setupRecordingListeners();
       
-      console.log('Recovered interrupted recording session', savedSession.id);
+      debugLog('Recovered interrupted recording session', savedSession.id);
     }
   });
 }
@@ -1687,7 +1696,7 @@ function handleNavigationCompleted(details) {
         
         // If metadata object already has metadata or was manually edited, don't re-extract
         if (Object.keys(metadataObj.metadata).length > 0 || metadataObj.metadata.manuallyEdited) {
-          console.log('Metadata already exists or was manually edited for URL, skipping extraction:', tab.url);
+          debugLog('Metadata already exists or was manually edited for URL, skipping extraction:', tab.url);
           return;
         }
         
@@ -2072,13 +2081,13 @@ async function logPageVisit(visitData) {
 async function updatePageVisitMetadata(url, metadata) {
   if (!currentSession) return;
   
-  console.log('Updating metadata for URL:', url, metadata);
+  debugLog('Updating metadata for URL:', url, metadata);
   
   // Get or create metadata object and update it
   const { id: metadataId } = await getOrCreateMetadataObject(url);
   await updateMetadataObject(metadataId, metadata);
   
-  console.log('Metadata object updated:', metadataId);
+  debugLog('Metadata object updated:', metadataId);
   
   return true; // Indicate success
 }
@@ -2176,7 +2185,7 @@ function extractDOIFromURL(url) {
         
         // Validate it looks like a proper DOI
         if (/^10\.\d{4,9}\/[-._;()/:a-zA-Z0-9]+$/.test(doi)) {
-          console.log(`Extracted DOI from URL: ${doi}`);
+          debugLog(`Extracted DOI from URL: ${doi}`);
           return doi;
         }
       }
@@ -2189,7 +2198,7 @@ function extractDOIFromURL(url) {
 
 async function fetchDOIMetadata(doi) {
   try {
-    console.log('Fetching metadata for DOI:', doi);
+    debugLog('Fetching metadata for DOI:', doi);
     
     // Use doi.org (not dx.doi.org) and request CSL JSON with fallback options
     const response = await fetch(`https://doi.org/${doi}`, {
@@ -2229,7 +2238,7 @@ async function fetchDOIMetadata(doi) {
     }
 
     const data = await response.json();
-    console.log('DOI metadata received:', data);
+    debugLog('DOI metadata received:', data);
 
     // Convert CSL JSON to our metadata format
     const metadata = {
@@ -2305,39 +2314,39 @@ async function fetchDOIMetadata(doi) {
 // ISBN Metadata Fetching
 async function fetchISBNMetadata(isbn) {
   try {
-    console.log('Fetching metadata for ISBN:', isbn);
+    debugLog('Fetching metadata for ISBN:', isbn);
     
     // Try Open Library API first (completely free, no auth required)
     try {
-      console.log('Trying Open Library API...');
+      debugLog('Trying Open Library API...');
       const response = await fetch(`https://openlibrary.org/api/books?bibkeys=ISBN:${isbn}&jscmd=details&format=json`);
       
       if (response.ok) {
         const data = await response.json();
         const bookKey = `ISBN:${isbn}`;
         if (data[bookKey]) {
-          console.log('Open Library data received:', data[bookKey]);
+          debugLog('Open Library data received:', data[bookKey]);
           return convertOpenLibraryToMetadata(data[bookKey], isbn);
         }
       }
     } catch (e) {
-      console.log('Open Library API failed:', e.message);
+      debugLog('Open Library API failed:', e.message);
     }
     
     // Try Google Books API as fallback
     try {
-      console.log('Trying Google Books API...');
+      debugLog('Trying Google Books API...');
       const response = await fetch(`https://www.googleapis.com/books/v1/volumes?q=isbn:${isbn}`);
       
       if (response.ok) {
         const data = await response.json();
         if (data.totalItems > 0 && data.items && data.items[0]) {
-          console.log('Google Books data received:', data.items[0]);
+          debugLog('Google Books data received:', data.items[0]);
           return convertGoogleBooksToMetadata(data.items[0], isbn);
         }
       }
     } catch (e) {
-      console.log('Google Books API failed:', e.message);
+      debugLog('Google Books API failed:', e.message);
     }
     
     return null;
@@ -2421,7 +2430,7 @@ function convertGoogleBooksToMetadata(data, isbn) {
 // PMID Metadata Fetching
 async function fetchPMIDMetadata(pmid) {
   try {
-    console.log('Fetching metadata for PMID:', pmid);
+    debugLog('Fetching metadata for PMID:', pmid);
     
     // Use NCBI E-utilities API
     const response = await fetch(`https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi?db=pubmed&id=${pmid}&retmode=json`);
@@ -2429,7 +2438,7 @@ async function fetchPMIDMetadata(pmid) {
     if (response.ok) {
       const data = await response.json();
       if (data.result && data.result[pmid]) {
-        console.log('PubMed data received:', data.result[pmid]);
+        debugLog('PubMed data received:', data.result[pmid]);
         return convertPubMedToMetadata(data.result[pmid], pmid);
       }
     }
@@ -2493,7 +2502,7 @@ function convertPubMedToMetadata(data, pmid) {
 // arXiv Metadata Fetching
 async function fetchArxivMetadata(arxivId) {
   try {
-    console.log('Fetching metadata for arXiv:', arxivId);
+    debugLog('Fetching metadata for arXiv:', arxivId);
     
     // Use arXiv API
     const response = await fetch(`https://export.arxiv.org/api/query?id_list=${arxivId}`);
@@ -2504,11 +2513,11 @@ async function fetchArxivMetadata(arxivId) {
     }
     
     const text = await response.text();
-    console.log('arXiv API response received, length:', text.length);
+    debugLog('arXiv API response received, length:', text.length);
     
     // Parse XML using text methods (DOMParser not available in service worker)
     const result = parseArxivXML(text, arxivId);
-    console.log('arXiv metadata result:', result);
+    debugLog('arXiv metadata result:', result);
     return result;
   } catch (error) {
     console.error('Error fetching arXiv metadata:', error);
@@ -2666,7 +2675,7 @@ async function enhanceMetadataWithDOI(url, metadata) {
       timestamp: metadata.timestamp
     };
 
-    console.log('Enhanced metadata with DOI:', enhancedMetadata);
+    debugLog('Enhanced metadata with DOI:', enhancedMetadata);
     return enhancedMetadata;
   } catch (e) {
     console.error('Error enhancing metadata with DOI:', e);
@@ -2677,7 +2686,7 @@ async function enhanceMetadataWithDOI(url, metadata) {
 // New DOI-first metadata processing function
 async function processMetadataWithDOIPriority(url, extractedMetadata) {
   try {
-    console.log('Processing metadata with DOI priority for:', url);
+    debugLog('Processing metadata with DOI priority for:', url);
     
     // Step 1: Check if content script found a DOI
     let doi = extractedMetadata.doi;
@@ -2685,21 +2694,21 @@ async function processMetadataWithDOIPriority(url, extractedMetadata) {
     
     // Step 2: If no DOI from content, try extracting from URL
     if (!doi) {
-      console.log('No DOI from content script, trying URL extraction...');
+      debugLog('No DOI from content script, trying URL extraction...');
       doi = extractDOIFromURL(url);
       if (doi) {
-        console.log(`DOI extracted from URL: ${doi}`);
+        debugLog(`DOI extracted from URL: ${doi}`);
         extractedMetadata.doi = doi;
       }
     }
     
     // Step 3: If we have a DOI, fetch metadata from DOI API
     if (doi) {
-      console.log(`Fetching DOI metadata for: ${doi}`);
+      debugLog(`Fetching DOI metadata for: ${doi}`);
       doiMetadata = await fetchDOIMetadata(doi);
       
       if (doiMetadata) {
-        console.log('Successfully fetched DOI metadata, using it as primary source');
+        debugLog('Successfully fetched DOI metadata, using it as primary source');
         
         // Use DOI metadata as primary source, fill gaps with extracted metadata
         const finalMetadata = {
@@ -2724,15 +2733,15 @@ async function processMetadataWithDOIPriority(url, extractedMetadata) {
           doiApiSuccess: true
         };
         
-        console.log('Final metadata (DOI-primary):', finalMetadata);
+        debugLog('Final metadata (DOI-primary):', finalMetadata);
         return finalMetadata;
       } else {
-        console.log('Failed to fetch DOI metadata, using extracted metadata with DOI');
+        debugLog('Failed to fetch DOI metadata, using extracted metadata with DOI');
         extractedMetadata.extractionSource = 'extracted-with-doi';
         extractedMetadata.doiApiSuccess = false;
       }
     } else {
-      console.log('No DOI found, using extracted metadata only');
+      debugLog('No DOI found, using extracted metadata only');
       extractedMetadata.extractionSource = 'extracted-only';
     }
     
@@ -2823,7 +2832,7 @@ function addNote(url, note) {
           // Add a note_added property to the event to indicate it has notes
           event.has_notes = true;
           
-          console.log(`Updated note for search: ${search.query}`);
+          debugLog(`Updated note for search: ${search.query}`);
           break;
         }
       }
@@ -2859,7 +2868,7 @@ function addNote(url, note) {
             // Add a note_added property to the event to indicate it has notes
             event.has_notes = true;
             
-            console.log(`Updated note for page visit: ${visit.title}`);
+            debugLog(`Updated note for page visit: ${visit.title}`);
             break;
           }
         }
@@ -2995,7 +3004,7 @@ function processSessionResume(sessionToResume, sessionIdToDelete, resolve, rejec
       // Save succeeded! Now safe to delete from IndexedDB
       try {
         await researchTrackerDB.deleteSession(sessionIdToDelete);
-        console.log(`Session ${sessionIdToDelete} successfully moved from IndexedDB to active session`);
+        debugLog(`Session ${sessionIdToDelete} successfully moved from IndexedDB to active session`);
       } catch (error) {
         // Log but don't fail - session is already resumed successfully
         console.warn(`Failed to delete session from IndexedDB after resume:`, error);
@@ -3006,7 +3015,7 @@ function processSessionResume(sessionToResume, sessionIdToDelete, resolve, rejec
       startAutosave();
       updateBadge();
 
-      console.log('Session resumed:', sessionToResume.id);
+      debugLog('Session resumed:', sessionToResume.id);
       resolve();
     }
   });
@@ -3350,7 +3359,7 @@ function deduplicateNotes(notes) {
     // If content is the same and timestamps are within 5 seconds, consider it a duplicate
     if (note.content === prevNote.content && timeDiffSeconds < 5) {
       // Skip this note (it's a duplicate)
-      console.log('Filtered out duplicate note:', note.content);
+      debugLog('Filtered out duplicate note:', note.content);
     } else {
       uniqueNotes.push(note);
       prevNote = note;
@@ -3373,7 +3382,7 @@ function formatTimestamp(isoString) {
 // Cleanup function to clear corrupted data from chrome.storage
 async function clearCorruptedData() {
   return new Promise((resolve, reject) => {
-    console.log('Starting cleanup of corrupted data...');
+    debugLog('Starting cleanup of corrupted data...');
     
     chrome.storage.local.get([STORAGE_KEYS.SESSIONS], (result) => {
       if (chrome.runtime.lastError) {
@@ -3383,22 +3392,22 @@ async function clearCorruptedData() {
       }
       
       const sessions = result[STORAGE_KEYS.SESSIONS] || [];
-      console.log(`Found ${sessions.length} sessions in chrome.storage`);
+      debugLog(`Found ${sessions.length} sessions in chrome.storage`);
       
       // Filter out corrupted sessions
       const validSessions = sessions.filter(session => {
         if (!session || !session.id) {
-          console.log('Removing corrupted session (null or missing ID)');
+          debugLog('Removing corrupted session (null or missing ID)');
           return false;
         }
         if (!validateSessionData(session)) {
-          console.log('Removing invalid session:', session.id);
+          debugLog('Removing invalid session:', session.id);
           return false;
         }
         return true;
       });
       
-      console.log(`${validSessions.length} valid sessions remaining`);
+      debugLog(`${validSessions.length} valid sessions remaining`);
       
       // Clear the sessions array in chrome.storage since we're moving to IndexedDB
       chrome.storage.local.remove([STORAGE_KEYS.SESSIONS], () => {
@@ -3406,7 +3415,7 @@ async function clearCorruptedData() {
           console.error('Error clearing sessions:', chrome.runtime.lastError);
           reject(chrome.runtime.lastError);
         } else {
-          console.log('Successfully cleared sessions from chrome.storage');
+          debugLog('Successfully cleared sessions from chrome.storage');
           resolve({ removed: sessions.length - validSessions.length, valid: validSessions });
         }
       });
@@ -3416,20 +3425,20 @@ async function clearCorruptedData() {
 
 // Window management functions
 async function createPopoutWindow(width = 400, height = 600) {
-  console.log('createPopoutWindow called with:', { width, height });
+  debugLog('createPopoutWindow called with:', { width, height });
   
   try {
     // Clean up any existing popup window first
-    console.log('Attempting to close any existing popout window...');
+    debugLog('Attempting to close any existing popout window...');
     await closePopoutWindow();
-    console.log('Successfully closed any existing popout window');
+    debugLog('Successfully closed any existing popout window');
     
     return new Promise((resolve, reject) => {
       try {
         // Try both with and without leading slash to make sure we get the right URL
         // Remove the leading slash as it might cause issues
         const popupUrl = chrome.runtime.getURL('src/popup/popup.html');
-        console.log('Creating popup window with URL:', popupUrl);
+        debugLog('Creating popup window with URL:', popupUrl);
         
         // Just check if we have a URL at all
         if (!popupUrl) {
@@ -3439,7 +3448,7 @@ async function createPopoutWindow(width = 400, height = 600) {
         }
         
         // Create a new popup window
-        console.log('Calling chrome.windows.create...');
+        debugLog('Calling chrome.windows.create...');
         chrome.windows.create({
           url: popupUrl,
           type: 'popup',
@@ -3447,7 +3456,7 @@ async function createPopoutWindow(width = 400, height = 600) {
           height: height + 10, // Add a bit of extra padding to avoid scrollbars
           focused: true
         }, (window) => {
-          console.log('chrome.windows.create callback received with window:', window);
+          debugLog('chrome.windows.create callback received with window:', window);
           
           if (chrome.runtime.lastError) {
             console.error('Error creating window:', chrome.runtime.lastError);
@@ -3461,10 +3470,10 @@ async function createPopoutWindow(width = 400, height = 600) {
             return;
           }
           
-          console.log('Popup window created successfully:', window);
+          debugLog('Popup window created successfully:', window);
           
           // Save the window ID to storage
-          console.log('Saving window ID to storage:', window.id);
+          debugLog('Saving window ID to storage:', window.id);
           chrome.storage.local.set({
             [STORAGE_KEYS.POPUP_WINDOW_ID]: window.id
           }, () => {
@@ -3474,11 +3483,11 @@ async function createPopoutWindow(width = 400, height = 600) {
               return;
             }
             
-            console.log('Window ID saved to storage successfully:', window.id);
+            debugLog('Window ID saved to storage successfully:', window.id);
             resolve(window);
           });
         });
-        console.log('chrome.windows.create call made');
+        debugLog('chrome.windows.create call made');
       } catch (innerError) {
         console.error('Exception in createPopoutWindow Promise:', innerError);
         reject(innerError);
@@ -3491,36 +3500,36 @@ async function createPopoutWindow(width = 400, height = 600) {
 }
 
 async function closePopoutWindow() {
-  console.log('closePopoutWindow called');
+  debugLog('closePopoutWindow called');
   
   return new Promise((resolve, reject) => {
     try {
       chrome.storage.local.get([STORAGE_KEYS.POPUP_WINDOW_ID], (result) => {
-        console.log('Retrieved stored popup window ID:', result);
+        debugLog('Retrieved stored popup window ID:', result);
         const windowId = result[STORAGE_KEYS.POPUP_WINDOW_ID];
         
         if (!windowId) {
-          console.log('No popup window ID found in storage, nothing to close');
+          debugLog('No popup window ID found in storage, nothing to close');
           resolve(); // No popup window to close
           return;
         }
         
-        console.log('Attempting to close window with ID:', windowId);
+        debugLog('Attempting to close window with ID:', windowId);
         chrome.windows.remove(windowId, () => {
           if (chrome.runtime.lastError) {
             // Ignore errors about windows that don't exist
             console.warn('Window removal error:', chrome.runtime.lastError);
           } else {
-            console.log('Window successfully closed');
+            debugLog('Window successfully closed');
           }
           
           // Clear the window ID from storage
-          console.log('Removing window ID from storage');
+          debugLog('Removing window ID from storage');
           chrome.storage.local.remove([STORAGE_KEYS.POPUP_WINDOW_ID], () => {
             if (chrome.runtime.lastError) {
               console.warn('Error removing window ID from storage:', chrome.runtime.lastError);
             } else {
-              console.log('Window ID successfully removed from storage');
+              debugLog('Window ID successfully removed from storage');
             }
             
             resolve();

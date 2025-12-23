@@ -1,6 +1,15 @@
 // IndexedDB module for Research Tracker Extension
 // Handles storage of historical sessions while current session remains in chrome.storage
 
+// Debug logging helper - checks settings for debug mode
+function debugLog(...args) {
+  chrome.storage.local.get(['citationSettings'], (result) => {
+    if (result.citationSettings?.debugMode) {
+      debugLog('[DEBUG]', ...args);
+    }
+  });
+}
+
 const DB_NAME = 'ResearchTrackerDB';
 const DB_VERSION = 1;
 
@@ -27,7 +36,7 @@ class ResearchTrackerDB {
 
       request.onsuccess = () => {
         this.db = request.result;
-        console.log('IndexedDB initialized successfully');
+        debugLog('IndexedDB initialized successfully');
         resolve(this.db);
       };
 
@@ -71,7 +80,7 @@ class ResearchTrackerDB {
       const request = store.put(session);
       
       request.onsuccess = () => {
-        console.log(`Session ${session.id} saved to IndexedDB`);
+        debugLog(`Session ${session.id} saved to IndexedDB`);
         resolve(session.id);
       };
       
@@ -143,7 +152,7 @@ class ResearchTrackerDB {
       const request = store.delete(sessionId);
       
       request.onsuccess = () => {
-        console.log(`Session ${sessionId} deleted from IndexedDB`);
+        debugLog(`Session ${sessionId} deleted from IndexedDB`);
         resolve();
       };
       
@@ -164,7 +173,7 @@ class ResearchTrackerDB {
       const request = store.clear();
       
       request.onsuccess = () => {
-        console.log('All sessions cleared from IndexedDB');
+        debugLog('All sessions cleared from IndexedDB');
         resolve();
       };
       

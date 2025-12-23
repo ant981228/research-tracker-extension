@@ -114,7 +114,7 @@ let citationSettings = {
 // Debug logging helper - only logs when debug mode is enabled
 function debugLog(...args) {
   if (citationSettings.debugMode) {
-    console.log('[DEBUG]', ...args);
+    debugLog('[DEBUG]', ...args);
   }
 }
 
@@ -173,7 +173,7 @@ function showModal(modal, type) {
   modal.classList.remove('hidden');
   modal.style.display = 'flex';
   
-  console.log('Modal stack after showing:', modalStack);
+  debugLog('Modal stack after showing:', modalStack);
 }
 
 function hideCurrentModal() {
@@ -228,7 +228,7 @@ function hideCurrentModal() {
     }
   }
   
-  console.log('Modal stack after hiding:', modalStack);
+  debugLog('Modal stack after hiding:', modalStack);
 }
 
 function init() {
@@ -333,7 +333,7 @@ function init() {
   /* Popout functionality removed
   // Check if we're already in a popup window
   chrome.runtime.sendMessage({ action: 'getWindowInfo' }, (response) => {
-    console.log('getWindowInfo response:', response);
+    debugLog('getWindowInfo response:', response);
     
     if (chrome.runtime.lastError) {
       console.error('Error checking window info:', chrome.runtime.lastError);
@@ -341,11 +341,11 @@ function init() {
     }
     
     if (response && response.isPopout) {
-      console.log('This is a popup window');
+      debugLog('This is a popup window');
       isPopout = true;
       popoutBtn.classList.add('active');
     } else {
-      console.log('This is a regular extension popup');
+      debugLog('This is a regular extension popup');
       isPopout = false;
       popoutBtn.classList.remove('active');
     }
@@ -474,7 +474,7 @@ function init() {
   updateActivityStatus();
   
   // Get current status
-  console.log('Popup: Initializing - getting current status...');
+  debugLog('Popup: Initializing - getting current status...');
   refreshStatus();
   
   // Get current URL for adding notes
@@ -506,14 +506,14 @@ function refreshStatus(resetSelection = false) {
     selectedPageUrl = null;
   }
 
-  console.log('Popup: Requesting status from background...');
+  debugLog('Popup: Requesting status from background...');
   chrome.runtime.sendMessage({ action: 'getStatus' }, response => {
     if (chrome.runtime.lastError) {
       console.error('Popup: Error getting status:', chrome.runtime.lastError);
       return;
     }
     
-    console.log('Popup: Received status response:', response);
+    debugLog('Popup: Received status response:', response);
     updateUI(response);
   });
 }
@@ -908,7 +908,7 @@ function stopRecording() {
     
     // If the session was successfully saved, update the UI
     if (response && response.success) {
-      console.log('Session successfully stopped and saved');
+      debugLog('Session successfully stopped and saved');
       
       // First update the UI state
       refreshStatus();
@@ -936,7 +936,7 @@ function loadSessionsAndDisplay() {
     }
     
     if (response && response.success) {
-      console.log(`Loaded ${response.sessions.length} sessions`);
+      debugLog(`Loaded ${response.sessions.length} sessions`);
       displaySessions(response.sessions);
     } else {
       console.error('Failed to load sessions:', response);
@@ -1069,7 +1069,7 @@ function renameCurrentSession() {
       }
       
       if (response && response.success) {
-        console.log('Session renamed successfully');
+        debugLog('Session renamed successfully');
         // Name was updated in background.js, no need to update UI here
       } else {
         console.error('Failed to rename session:', response);
@@ -1514,7 +1514,7 @@ async function savePendingEdits(url) {
   
   if (hasChanges) {
     chrome.storage.local.set({ [PENDING_EDITS_KEY]: pendingEdits });
-    console.log('Research Tracker: Saved pending edits for', url);
+    debugLog('Research Tracker: Saved pending edits for', url);
   }
 }
 
@@ -1527,7 +1527,7 @@ async function restorePendingEdits(url) {
         // Check if edits are recent (within 24 hours)
         const ageHours = (Date.now() - pendingEdits.timestamp) / (1000 * 60 * 60);
         if (ageHours < 24) {
-          console.log('Research Tracker: Restoring pending edits for', url);
+          debugLog('Research Tracker: Restoring pending edits for', url);
           
           // Restore field values
           metadataTitle.value = pendingEdits.edits.title || '';
@@ -1559,7 +1559,7 @@ function clearPendingEdits() {
   chrome.storage.local.remove([PENDING_EDITS_KEY]);
   hasPendingEdits = false;
   hidePendingEditsIndicator();
-  console.log('Research Tracker: Cleared pending edits');
+  debugLog('Research Tracker: Cleared pending edits');
 }
 
 function showPendingEditsIndicator() {
@@ -1595,7 +1595,7 @@ async function checkAndRestorePendingSession() {
         // Check if edits are recent (within 24 hours)
         const ageHours = (Date.now() - pendingEdits.timestamp) / (1000 * 60 * 60);
         if (ageHours < 24) {
-          console.log('Research Tracker: Restoring editing session for', pendingEdits.url);
+          debugLog('Research Tracker: Restoring editing session for', pendingEdits.url);
           
           // Set the selected URL to match the pending edits
           selectedPageUrl = pendingEdits.url;
@@ -1627,7 +1627,7 @@ async function checkForPendingEditRequest() {
       const pendingEditUrl = result.pendingEditUrl;
       
       if (pendingEditUrl) {
-        console.log('Research Tracker: Opening metadata modal for requested URL:', pendingEditUrl);
+        debugLog('Research Tracker: Opening metadata modal for requested URL:', pendingEditUrl);
         
         // Clear the pending edit request
         chrome.storage.local.remove(['pendingEditUrl']);
@@ -1843,7 +1843,7 @@ function saveMetadata() {
       
       if (metadataModal.style.display !== 'none') {
         // Modal is still open, likely due to response callback not executing
-        console.log('Closing modal via fallback timeout');
+        debugLog('Closing modal via fallback timeout');
         closeMetadataModal();
         noteTargetEl.textContent = 'Metadata update attempted';
         
@@ -2127,27 +2127,27 @@ function truncateUrl(url) {
 
 /* Popout functionality removed 
 function togglePopout() {
-  console.log('togglePopout called, isPopout:', isPopout);
+  debugLog('togglePopout called, isPopout:', isPopout);
   
   try {
     if (isPopout) {
-      console.log('Closing popout window...');
+      debugLog('Closing popout window...');
       // Close the current popup window and reopen as a regular extension popup
       chrome.runtime.sendMessage({ action: 'closePopout' }, (response) => {
-        console.log('closePopout response:', response);
+        debugLog('closePopout response:', response);
         if (chrome.runtime.lastError) {
           console.error('Error in closePopout response:', chrome.runtime.lastError);
         }
         window.close();
       });
     } else {
-      console.log('Creating popout window...');
+      debugLog('Creating popout window...');
       // Get the current dimensions of the popup
       const width = window.innerWidth;
       const height = window.innerHeight;
       
-      console.log('Window dimensions:', width, height);
-      console.log('Always on top:', isAlwaysOnTop);
+      debugLog('Window dimensions:', width, height);
+      debugLog('Always on top:', isAlwaysOnTop);
       
       // Add visual feedback that button was clicked
       popoutBtn.classList.add('clicked');
@@ -2158,7 +2158,7 @@ function togglePopout() {
         width: width + 30, // Add some extra width to prevent horizontal scrollbar
         height: height + 50 // Add some extra height for window frame
       }, (response) => {
-        console.log('createPopout callback entered');
+        debugLog('createPopout callback entered');
         
         if (chrome.runtime.lastError) {
           console.error('Error sending createPopout message:', chrome.runtime.lastError);
@@ -2166,11 +2166,11 @@ function togglePopout() {
           return;
         }
         
-        console.log('createPopout response:', response);
+        debugLog('createPopout response:', response);
         
         // Only close if we got a successful response
         if (response && response.success) {
-          console.log('Closing current popup after successful popout creation');
+          debugLog('Closing current popup after successful popout creation');
           window.close();
         } else {
           console.error('Failed to create popout window:', response);
@@ -2178,7 +2178,7 @@ function togglePopout() {
         }
       });
       
-      console.log('createPopout message sent');
+      debugLog('createPopout message sent');
     }
   } catch (err) {
     console.error('Exception in togglePopout:', err);
@@ -2508,7 +2508,7 @@ async function copyCitation(url, title, buttonElement) {
       }, 1500);
     }
     
-    console.log('Citation copied:', citation);
+    debugLog('Citation copied:', citation);
   } catch (error) {
     console.error('Error copying citation:', error);
     alert('Failed to copy citation: ' + error.message);
@@ -2561,7 +2561,7 @@ function saveCitationSettings() {
   citationSettings.debugMode = debugModeCheckbox.checked;
   
   chrome.storage.local.set({ citationSettings }, () => {
-    console.log('Citation settings saved');
+    debugLog('Citation settings saved');
     
     // Notify all content scripts about the preview setting change
     chrome.tabs.query({}, (tabs) => {

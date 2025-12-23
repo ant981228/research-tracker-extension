@@ -1,3 +1,12 @@
+// Debug logging helper - checks settings for debug mode
+function debugLog(...args) {
+  chrome.storage.local.get(['citationSettings'], (result) => {
+    if (result.citationSettings?.debugMode) {
+      debugLog('[DEBUG]', ...args);
+    }
+  });
+}
+
 // Helper functions for search engines
 const SEARCH_EXTRACTORS = {
   GOOGLE_SCHOLAR: extractGoogleScholarResults,
@@ -257,7 +266,7 @@ function extractDOIFromPageContent() {
           // Validate it looks like a DOI
           const doiPattern = /^10\.\d{4,9}\/[-._;()/:a-zA-Z0-9]+$/;
           if (doiPattern.test(content)) {
-            console.log(`Found DOI in meta tag ${selector}: ${content}`);
+            debugLog(`Found DOI in meta tag ${selector}: ${content}`);
             return content;
           }
         }
@@ -271,7 +280,7 @@ function extractDOIFromPageContent() {
         const data = JSON.parse(script.textContent);
         const doi = findDOIInJsonLd(data);
         if (doi) {
-          console.log(`Found DOI in JSON-LD: ${doi}`);
+          debugLog(`Found DOI in JSON-LD: ${doi}`);
           return doi;
         }
       } catch (e) {
@@ -288,7 +297,7 @@ function extractDOIFromPageContent() {
         if (content) {
           const cleanContent = content.replace(/^(doi:|DOI:|https?:\/\/(dx\.)?doi\.org\/)/i, '');
           if (/^10\.\d{4,9}\/[-._;()/:a-zA-Z0-9]+$/.test(cleanContent)) {
-            console.log(`Found DOI in microdata: ${cleanContent}`);
+            debugLog(`Found DOI in microdata: ${cleanContent}`);
             return cleanContent;
           }
         }
@@ -302,7 +311,7 @@ function extractDOIFromPageContent() {
       // Return the first valid DOI found
       for (const match of doiMatches) {
         if (/^10\.\d{4,9}\/[-._;()/:a-zA-Z0-9]+$/.test(match)) {
-          console.log(`Found DOI in page text: ${match}`);
+          debugLog(`Found DOI in page text: ${match}`);
           return match;
         }
       }
@@ -380,20 +389,20 @@ function extractPageMetadata() {
     };
     
     // STEP 1: Try to detect DOI first (highest priority)
-    console.log('Step 1: Attempting DOI detection...');
+    debugLog('Step 1: Attempting DOI detection...');
     let doi = extractDOIFromPageContent();
     
     // If we found a DOI, mark it in metadata and indicate we should try DOI API
     if (doi) {
       metadata.doi = doi;
       metadata.shouldFetchDOIMetadata = true;
-      console.log(`DOI detected: ${doi}. Will attempt to fetch metadata from DOI API.`);
+      debugLog(`DOI detected: ${doi}. Will attempt to fetch metadata from DOI API.`);
     } else {
-      console.log('No DOI found in page content.');
+      debugLog('No DOI found in page content.');
     }
     
     // STEP 2: Extract metadata using site-specific or generic extractors
-    console.log('Step 2: Extracting metadata using site-specific/generic extractors...');
+    debugLog('Step 2: Extracting metadata using site-specific/generic extractors...');
     
     // Check if we have a site-specific extractor for this domain
     const hostname = window.location.hostname;
@@ -438,7 +447,7 @@ function extractPageMetadata() {
     }
     
     if (siteExtractor) {
-      console.log(`Using site-specific extractor for ${hostname}`);
+      debugLog(`Using site-specific extractor for ${hostname}`);
       try {
         // Run the site-specific extractor
         const siteMetadata = siteExtractor();
@@ -492,7 +501,7 @@ function extractPageMetadata() {
       metadata.extractorType = 'generic';
     }
     
-    console.log('Extracted metadata:', metadata);
+    debugLog('Extracted metadata:', metadata);
     return metadata;
   } catch (e) {
     console.error('Error extracting page metadata:', e);
@@ -3892,21 +3901,21 @@ function extractAtlanticCouncilMetadata() {
     
     // Authors from expert author paragraph - specifically the one with "By"
     const expertAuthorEl = document.querySelector('.gta-site-banner--expert-author.lower');
-    console.log('Atlantic Council: Found expert author element?', !!expertAuthorEl);
+    debugLog('Atlantic Council: Found expert author element?', !!expertAuthorEl);
     
     if (expertAuthorEl) {
       // Check if this paragraph contains "By" to ensure it's the author byline
       const containsBy = expertAuthorEl.textContent.includes('By');
-      console.log('Atlantic Council: Contains "By"?', containsBy);
+      debugLog('Atlantic Council: Contains "By"?', containsBy);
       
       if (containsBy) {
         // Get author links within this specific paragraph
         const authorLinks = expertAuthorEl.querySelectorAll('a.gta-site-banner--tax--expert, a.gta-post-site-banner--tax--expert');
-        console.log('Atlantic Council: Found author links:', authorLinks.length);
+        debugLog('Atlantic Council: Found author links:', authorLinks.length);
         
         if (authorLinks.length > 0) {
           const authors = Array.from(authorLinks).map(link => link.textContent.trim());
-          console.log('Atlantic Council: Extracted authors:', authors);
+          debugLog('Atlantic Council: Extracted authors:', authors);
           metadata.authors = authors;
           metadata.author = authors.join(', ');
         }
@@ -3923,7 +3932,7 @@ function extractAtlanticCouncilMetadata() {
             const authors = Array.from(authorLinks).map(link => link.textContent.trim())
               .filter(text => text && text.length > 2 && text.length < 50);
             if (authors.length > 0) {
-              console.log('Atlantic Council: Fallback extracted authors:', authors);
+              debugLog('Atlantic Council: Fallback extracted authors:', authors);
               metadata.authors = authors;
               metadata.author = authors.join(', ');
               break;
@@ -3969,15 +3978,15 @@ function extractHudsonMetadata() {
       authorDiv = document.querySelector('.expert-author--names');
     }
     
-    console.log('Hudson: Found author div?', !!authorDiv);
+    debugLog('Hudson: Found author div?', !!authorDiv);
     
     if (authorDiv) {
       const authorLinks = authorDiv.querySelectorAll('a');
-      console.log('Hudson: Found', authorLinks.length, 'author links');
+      debugLog('Hudson: Found', authorLinks.length, 'author links');
       
       if (authorLinks.length > 0) {
         const authors = Array.from(authorLinks).map(link => link.textContent.trim());
-        console.log('Hudson: Extracted authors:', authors);
+        debugLog('Hudson: Extracted authors:', authors);
         metadata.authors = authors;
         metadata.author = authors.join(', ');
       }
@@ -3986,15 +3995,15 @@ function extractHudsonMetadata() {
     // Date from field-date time element
     // Log all date elements to debug
     const allDateElements = document.querySelectorAll('.field-date time');
-    console.log('Hudson: Found', allDateElements.length, 'date elements');
+    debugLog('Hudson: Found', allDateElements.length, 'date elements');
     allDateElements.forEach((el, index) => {
-      console.log(`Hudson: Date ${index}:`, el.textContent.trim(), 'datetime:', el.getAttribute('datetime'));
+      debugLog(`Hudson: Date ${index}:`, el.textContent.trim(), 'datetime:', el.getAttribute('datetime'));
     });
     
     // Try to find the article date specifically
     const dateTimeEl = document.querySelector('.block-field-blocknodeshort-form-articlefield-date .field-date time');
     if (dateTimeEl) {
-      console.log('Hudson: Using article date:', dateTimeEl.textContent.trim());
+      debugLog('Hudson: Using article date:', dateTimeEl.textContent.trim());
       // First try datetime attribute
       if (dateTimeEl.getAttribute('datetime')) {
         metadata.publishDate = dateTimeEl.getAttribute('datetime');
@@ -4006,7 +4015,7 @@ function extractHudsonMetadata() {
       // Fallback to first .field-date time element
       const firstDateEl = document.querySelector('.field-date time');
       if (firstDateEl) {
-        console.log('Hudson: Using first date found:', firstDateEl.textContent.trim());
+        debugLog('Hudson: Using first date found:', firstDateEl.textContent.trim());
         if (firstDateEl.getAttribute('datetime')) {
           metadata.publishDate = firstDateEl.getAttribute('datetime');
         } else {
@@ -4611,9 +4620,9 @@ async function updateCurrentPageMetadata(field, value) {
     
     if (updateResponse && updateResponse.success) {
       if (field === 'bulk') {
-        console.log('Bulk metadata update completed:', value);
+        debugLog('Bulk metadata update completed:', value);
       } else {
-        console.log(`Updated ${field} to:`, value);
+        debugLog(`Updated ${field} to:`, value);
       }
       
       // Update citation preview if it's visible
@@ -4635,11 +4644,11 @@ document.addEventListener('keydown', async (e) => {
   const modifierKey = isMac ? e.metaKey : e.ctrlKey;
   const modifierName = isMac ? 'Cmd' : 'Ctrl';
   
-  console.log(`Research Tracker: Key pressed:`, e.key, `${modifierName}:`, modifierKey, 'Shift:', e.shiftKey, 'Alt:', e.altKey);
+  debugLog(`Research Tracker: Key pressed:`, e.key, `${modifierName}:`, modifierKey, 'Shift:', e.shiftKey, 'Alt:', e.altKey);
   
   // Check for Cmd/Ctrl+[0-8]
   if (modifierKey && !e.shiftKey && !e.altKey && ((e.key >= '1' && e.key <= '8') || e.key === '0')) {
-    console.log(`Research Tracker: ${modifierName}+${e.key} detected`);
+    debugLog(`Research Tracker: ${modifierName}+${e.key} detected`);
     e.preventDefault();
     e.stopPropagation();
     e.stopImmediatePropagation();
@@ -4661,7 +4670,7 @@ document.addEventListener('keydown', async (e) => {
     
     // Get selected text
     const selectedText = window.getSelection().toString();
-    console.log('Research Tracker: Selected text:', selectedText);
+    debugLog('Research Tracker: Selected text:', selectedText);
     if (!selectedText) {
       showToast('No text selected', 'error');
       return;
@@ -4719,7 +4728,7 @@ document.addEventListener('keydown', async (e) => {
         break;
         
       case '0': // Auto-fill metadata from identifier (DOI, ISBN, PMID, arXiv, etc.)
-        console.log('Research Tracker: Auto-fill from identifier requested');
+        debugLog('Research Tracker: Auto-fill from identifier requested');
         
         // Detect identifier type from selected text
         const detected = detectIdentifierType(selectedText);
@@ -4798,7 +4807,7 @@ document.addEventListener('keydown', async (e) => {
   
   // Check for Ctrl+q (copy citation) - always use Ctrl, even on Mac
   if (e.ctrlKey && !e.shiftKey && !e.altKey && e.key === 'q') {
-    console.log('Research Tracker: Ctrl+q detected - Copy Citation');
+    debugLog('Research Tracker: Ctrl+q detected - Copy Citation');
     e.preventDefault();
     e.stopPropagation();
     
@@ -4827,10 +4836,10 @@ document.addEventListener('keydown', async (e) => {
 // Log that keyboard shortcuts are initialized
 const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
 const modifierName = isMac ? 'Cmd' : 'Ctrl';
-console.log('Research Tracker: Keyboard shortcuts initialized.');
-console.log(`  ${modifierName}+1: Author | ${modifierName}+2: Quals | ${modifierName}+3: Date`);
-console.log(`  ${modifierName}+4: Title | ${modifierName}+5: Journal | ${modifierName}+6: Publication Info | ${modifierName}+7: Pages | ${modifierName}+8: DOI`);
-console.log(`  Ctrl+q: Copy citation for current page`);
+debugLog('Research Tracker: Keyboard shortcuts initialized.');
+debugLog(`  ${modifierName}+1: Author | ${modifierName}+2: Quals | ${modifierName}+3: Date`);
+debugLog(`  ${modifierName}+4: Title | ${modifierName}+5: Journal | ${modifierName}+6: Publication Info | ${modifierName}+7: Pages | ${modifierName}+8: DOI`);
+debugLog(`  Ctrl+q: Copy citation for current page`);
 
 // ===== CITATION PREVIEW FUNCTIONALITY =====
 
@@ -4925,7 +4934,7 @@ function shouldExcludeCitationPreview() {
 async function createCitationPreview() {
   // Check if this site should be excluded
   if (shouldExcludeCitationPreview()) {
-    console.log('Research Tracker: Citation preview disabled for this site');
+    debugLog('Research Tracker: Citation preview disabled for this site');
     return;
   }
   
@@ -4937,7 +4946,7 @@ async function createCitationPreview() {
   });
   
   if (!recordingStatusResult || !recordingStatusResult.isRecording) {
-    console.log('Research Tracker: Citation preview disabled - recording not active');
+    debugLog('Research Tracker: Citation preview disabled - recording not active');
     return;
   }
   
@@ -5030,7 +5039,7 @@ async function createCitationPreview() {
       url: window.location.href
     }, (response) => {
       if (response && response.success) {
-        console.log('Research Tracker: Popup opened for metadata editing');
+        debugLog('Research Tracker: Popup opened for metadata editing');
       } else {
         console.warn('Research Tracker: Failed to open popup for editing');
       }
@@ -5395,7 +5404,7 @@ setTimeout(async () => {
 
   // Don't overwrite manual edits
   if (existingMetadata?.metadata?.manuallyEdited) {
-    console.log('Research Tracker: Skipping auto-extraction - metadata was manually edited');
+    debugLog('Research Tracker: Skipping auto-extraction - metadata was manually edited');
     return;
   }
 
@@ -5409,7 +5418,7 @@ setTimeout(async () => {
       isAutomaticUpdate: true // Flag to indicate this is automatic extraction
     }, (response) => {
       if (response && response.success) {
-        console.log('Research Tracker: Page metadata auto-stored');
+        debugLog('Research Tracker: Page metadata auto-stored');
       }
     });
   }
