@@ -239,9 +239,14 @@ class ResearchTrackerDB {
         }
 
         console.log(`Migration complete: ${migrated} sessions migrated, ${failed} failed`);
-        
-        // Clear sessions from chrome.storage after successful migration
-        if (migrated > 0) {
+
+        // Only clear chrome.storage if migration was highly successful (>95% success rate)
+        // This prevents data loss from partial migrations
+        const successRate = sessions.length > 0 ? (migrated / sessions.length) : 0;
+        const MIN_SUCCESS_RATE = 0.95; // 95% threshold
+
+        if (successRate >= MIN_SUCCESS_RATE) {
+          console.log(`Migration success rate: ${(successRate * 100).toFixed(1)}% - clearing chrome.storage`);
           chrome.storage.local.remove(['sessions'], () => {
             if (chrome.runtime.lastError) {
               console.error('Failed to clear chrome.storage sessions:', chrome.runtime.lastError);
@@ -249,9 +254,15 @@ class ResearchTrackerDB {
               console.log('Cleared sessions from chrome.storage');
             }
           });
+        } else if (sessions.length > 0) {
+          console.warn(
+            `Migration success rate: ${(successRate * 100).toFixed(1)}% (below ${MIN_SUCCESS_RATE * 100}% threshold)\n` +
+            `Keeping sessions in chrome.storage for safety. ${failed} sessions failed to migrate.\n` +
+            `Please check browser console for errors and retry migration.`
+          );
         }
 
-        resolve({ migrated, failed, total: sessions.length });
+        resolve({ migrated, failed, total: sessions.length, successRate });
       });
     });
   }

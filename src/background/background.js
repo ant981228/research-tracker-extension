@@ -38,6 +38,38 @@ const KEEP_ALIVE_INTERVAL_MS = 25000; // 25 seconds (slightly less than autosave
 const ACTIVITY_CHECK_INTERVAL_MS = 60000; // 1 minute
 const INACTIVITY_WARNING_THRESHOLD_MS = 5 * 60000; // 5 minutes
 
+// Storage operation queue to prevent race conditions
+// This ensures chrome.storage read-modify-write operations are sequential
+let storageQueue = [];
+let storageQueueProcessing = false;
+
+async function queueStorageOperation(operation) {
+  return new Promise((resolve, reject) => {
+    storageQueue.push({ operation, resolve, reject });
+    processStorageQueue();
+  });
+}
+
+async function processStorageQueue() {
+  if (storageQueueProcessing || storageQueue.length === 0) {
+    return;
+  }
+
+  storageQueueProcessing = true;
+
+  while (storageQueue.length > 0) {
+    const { operation, resolve, reject } = storageQueue.shift();
+    try {
+      const result = await operation();
+      resolve(result);
+    } catch (error) {
+      reject(error);
+    }
+  }
+
+  storageQueueProcessing = false;
+}
+
 // Search engine patterns
 const SEARCH_ENGINES = {
   GOOGLE_SCHOLAR: {
@@ -2941,26 +2973,29 @@ async function renameSession(sessionId, newName) {
       return Promise.resolve();
     } else {
       // Fall back to chrome.storage if not found in IndexedDB
-      return new Promise((resolve, reject) => {
-        chrome.storage.local.get([STORAGE_KEYS.SESSIONS], (result) => {
-          const sessions = result[STORAGE_KEYS.SESSIONS] || [];
-          const sessionIndex = sessions.findIndex(s => s && s.id === sessionId);
-          
-          if (sessionIndex === -1) {
-            reject('Session not found');
-            return;
-          }
-          
-          // Update the session name
-          sessions[sessionIndex].name = newName;
-          
-          // Save back to storage
-          chrome.storage.local.set({ [STORAGE_KEYS.SESSIONS]: sessions }, () => {
-            if (chrome.runtime.lastError) {
-              reject(chrome.runtime.lastError);
-            } else {
-              resolve();
+      // Use queue to prevent race conditions with concurrent operations
+      return queueStorageOperation(() => {
+        return new Promise((resolve, reject) => {
+          chrome.storage.local.get([STORAGE_KEYS.SESSIONS], (result) => {
+            const sessions = result[STORAGE_KEYS.SESSIONS] || [];
+            const sessionIndex = sessions.findIndex(s => s && s.id === sessionId);
+
+            if (sessionIndex === -1) {
+              reject('Session not found');
+              return;
             }
+
+            // Update the session name
+            sessions[sessionIndex].name = newName;
+
+            // Save back to storage
+            chrome.storage.local.set({ [STORAGE_KEYS.SESSIONS]: sessions }, () => {
+              if (chrome.runtime.lastError) {
+                reject(chrome.runtime.lastError);
+              } else {
+                resolve();
+              }
+            });
           });
         });
       });
@@ -2983,27 +3018,30 @@ async function resumeSession(sessionId) {
 
     if (!sessionToResume) {
       // Fall back to chrome.storage if not found in IndexedDB
-      return new Promise((resolve, reject) => {
-        chrome.storage.local.get([STORAGE_KEYS.SESSIONS], (result) => {
-          const sessions = result[STORAGE_KEYS.SESSIONS] || [];
-          const sessionIndex = sessions.findIndex(s => s && s.id === sessionId);
+      // Use queue to prevent race conditions with concurrent operations
+      return queueStorageOperation(() => {
+        return new Promise((resolve, reject) => {
+          chrome.storage.local.get([STORAGE_KEYS.SESSIONS], (result) => {
+            const sessions = result[STORAGE_KEYS.SESSIONS] || [];
+            const sessionIndex = sessions.findIndex(s => s && s.id === sessionId);
 
-          if (sessionIndex === -1) {
-            reject('Session not found');
-            return;
-          }
+            if (sessionIndex === -1) {
+              reject('Session not found');
+              return;
+            }
 
-          sessionToResume = sessions[sessionIndex];
-          processSessionResume(sessionToResume, sessionIndex, sessions, resolve, reject);
+            sessionToResume = sessions[sessionIndex];
+            processSessionResume(sessionToResume, sessionIndex, sessions, null, resolve, reject);
+          });
         });
       });
     }
 
-    // Session found in IndexedDB, delete it from there and continue
-    await researchTrackerDB.deleteSession(sessionId);
-
+    // Session found in IndexedDB
+    // IMPORTANT: Save to chrome.storage BEFORE deleting from IndexedDB
+    // This prevents data loss if the save operation fails
     return new Promise((resolve, reject) => {
-      processSessionResume(sessionToResume, -1, [], resolve, reject);
+      processSessionResume(sessionToResume, -1, [], sessionId, resolve, reject);
     });
   } catch (error) {
     console.error('Error resuming session:', error);
@@ -3012,48 +3050,60 @@ async function resumeSession(sessionId) {
 }
 
 // Helper function to process session resumption
-function processSessionResume(sessionToResume, sessionIndex, sessions, resolve, reject) {
+// sessionIdToDelete: If provided, delete this session from IndexedDB after successful save
+function processSessionResume(sessionToResume, sessionIndex, sessions, sessionIdToDelete, resolve, reject) {
   // Validate session data integrity
   if (!validateSessionData(sessionToResume)) {
     reject('Session data is corrupted and cannot be resumed');
     return;
   }
-  
+
   // Remove session from completed sessions list if it came from chrome.storage
   if (sessionIndex >= 0) {
     sessions.splice(sessionIndex, 1);
   }
-  
+
   // Prepare session for resumption
   const resumedSession = {
     ...sessionToResume,
     endTime: null, // Clear end time
     isPaused: false
   };
-  
+
   // Add session_resumed event
   const resumeEvent = {
     type: 'session_resumed',
     timestamp: new Date().toISOString(),
     previousEndTime: sessionToResume.endTime
   };
-  
+
   resumedSession.events.push(resumeEvent);
-  
+
   // Set as current session
   currentSession = resumedSession;
   isRecording = true;
-  
+
   // Save updated state
-  chrome.storage.local.set({ 
+  chrome.storage.local.set({
     [STORAGE_KEYS.IS_RECORDING]: true,
     [STORAGE_KEYS.CURRENT_SESSION]: currentSession,
     [STORAGE_KEYS.SESSIONS]: sessions,
     [STORAGE_KEYS.LAST_SAVE_TIMESTAMP]: Date.now()
-  }, () => {
+  }, async () => {
     if (chrome.runtime.lastError) {
       reject(chrome.runtime.lastError);
     } else {
+      // Save succeeded! Now safe to delete from IndexedDB
+      if (sessionIdToDelete) {
+        try {
+          await researchTrackerDB.deleteSession(sessionIdToDelete);
+          console.log(`Session ${sessionIdToDelete} successfully moved from IndexedDB to active session`);
+        } catch (error) {
+          // Log but don't fail - session is already resumed successfully
+          console.warn(`Failed to delete session from IndexedDB after resume:`, error);
+        }
+      }
+
       // Set up listeners and autosave
       setupRecordingListeners();
       startAutosave();
@@ -3102,26 +3152,29 @@ async function deleteSession(sessionId) {
   } catch (error) {
     console.error('Failed to delete session from IndexedDB:', error);
     // Fall back to chrome.storage if IndexedDB fails
-    return new Promise((resolve, reject) => {
-      chrome.storage.local.get([STORAGE_KEYS.SESSIONS], (result) => {
-        const sessions = result[STORAGE_KEYS.SESSIONS] || [];
-        const sessionIndex = sessions.findIndex(s => s && s.id === sessionId);
-        
-        if (sessionIndex === -1) {
-          reject('Session not found');
-          return;
-        }
-        
-        // Remove the session
-        sessions.splice(sessionIndex, 1);
-        
-        // Save back to storage
-        chrome.storage.local.set({ [STORAGE_KEYS.SESSIONS]: sessions }, () => {
-          if (chrome.runtime.lastError) {
-            reject(chrome.runtime.lastError);
-          } else {
-            resolve();
+    // Use queue to prevent race conditions with concurrent operations
+    return queueStorageOperation(() => {
+      return new Promise((resolve, reject) => {
+        chrome.storage.local.get([STORAGE_KEYS.SESSIONS], (result) => {
+          const sessions = result[STORAGE_KEYS.SESSIONS] || [];
+          const sessionIndex = sessions.findIndex(s => s && s.id === sessionId);
+
+          if (sessionIndex === -1) {
+            reject('Session not found');
+            return;
           }
+
+          // Remove the session
+          sessions.splice(sessionIndex, 1);
+
+          // Save back to storage
+          chrome.storage.local.set({ [STORAGE_KEYS.SESSIONS]: sessions }, () => {
+            if (chrome.runtime.lastError) {
+              reject(chrome.runtime.lastError);
+            } else {
+              resolve();
+            }
+          });
         });
       });
     });
