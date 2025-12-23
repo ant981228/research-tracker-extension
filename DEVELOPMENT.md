@@ -102,15 +102,11 @@ The extension implements a **dual-storage approach**:
 #### 2. IndexedDB Schema
 ```javascript
 Database: "ResearchTrackerDB" (version 1)
-├── Object Store: "sessions"
-│   ├── keyPath: "id" (session ID)
-│   ├── Index: "startTime" (for chronological queries)
-│   ├── Index: "name" (for search functionality)
-│   └── Index: "endTime" (for completed session queries)
-└── Object Store: "metadata" 
-    ├── keyPath: "id" (metadata ID)
-    ├── Index: "url" (for URL-based lookups)
-    └── Index: "sessionId" (for session associations)
+└── Object Store: "sessions"
+    ├── keyPath: "id" (session ID)
+    ├── Index: "startTime" (for chronological queries)
+    ├── Index: "name" (for search functionality)
+    └── Index: "endTime" (for completed session queries)
 ```
 
 #### 3. Session Lifecycle

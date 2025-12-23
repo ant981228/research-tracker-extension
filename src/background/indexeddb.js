@@ -15,8 +15,7 @@ const DB_VERSION = 1;
 
 // Object store names
 const STORES = {
-  SESSIONS: 'sessions',
-  METADATA: 'metadata'
+  SESSIONS: 'sessions'
 };
 
 class ResearchTrackerDB {
@@ -42,20 +41,13 @@ class ResearchTrackerDB {
 
       request.onupgradeneeded = (event) => {
         const db = event.target.result;
-        
+
         // Create sessions store if it doesn't exist
         if (!db.objectStoreNames.contains(STORES.SESSIONS)) {
           const sessionStore = db.createObjectStore(STORES.SESSIONS, { keyPath: 'id' });
           sessionStore.createIndex('startTime', 'startTime', { unique: false });
           sessionStore.createIndex('name', 'name', { unique: false });
           sessionStore.createIndex('endTime', 'endTime', { unique: false });
-        }
-
-        // Create metadata store if it doesn't exist
-        if (!db.objectStoreNames.contains(STORES.METADATA)) {
-          const metadataStore = db.createObjectStore(STORES.METADATA, { keyPath: 'id' });
-          metadataStore.createIndex('url', 'url', { unique: false });
-          metadataStore.createIndex('sessionId', 'sessionId', { unique: false });
         }
       };
     });
@@ -166,50 +158,21 @@ class ResearchTrackerDB {
   // Clear all sessions (use with caution)
   async clearAllSessions() {
     const db = await this.ensureConnection();
-    
+
     return new Promise((resolve, reject) => {
       const transaction = db.transaction([STORES.SESSIONS], 'readwrite');
       const store = transaction.objectStore(STORES.SESSIONS);
       const request = store.clear();
-      
+
       request.onsuccess = () => {
         debugLog('All sessions cleared from IndexedDB');
         resolve();
       };
-      
+
       request.onerror = () => {
         console.error('Failed to clear sessions:', request.error);
         reject(request.error);
       };
-    });
-  }
-
-  // Save metadata
-  async saveMetadata(metadata) {
-    const db = await this.ensureConnection();
-    
-    return new Promise((resolve, reject) => {
-      const transaction = db.transaction([STORES.METADATA], 'readwrite');
-      const store = transaction.objectStore(STORES.METADATA);
-      const request = store.put(metadata);
-      
-      request.onsuccess = () => resolve(metadata.id);
-      request.onerror = () => reject(request.error);
-    });
-  }
-
-  // Get metadata by URL
-  async getMetadataByUrl(url) {
-    const db = await this.ensureConnection();
-    
-    return new Promise((resolve, reject) => {
-      const transaction = db.transaction([STORES.METADATA], 'readonly');
-      const store = transaction.objectStore(STORES.METADATA);
-      const index = store.index('url');
-      const request = index.getAll(url);
-      
-      request.onsuccess = () => resolve(request.result);
-      request.onerror = () => reject(request.error);
     });
   }
 }
