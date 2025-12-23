@@ -174,8 +174,12 @@ function showModal(modal, type) {
     modalStack.push('doi-input');
     doiInputModal.classList.add('hidden');
     doiInputModal.style.display = 'none';
+  } else if (allSessionsModal && allSessionsModal.style.display === 'flex') {
+    modalStack.push('all-sessions');
+    allSessionsModal.classList.add('hidden');
+    allSessionsModal.style.display = 'none';
   }
-  
+
   // Show the new modal
   modal.classList.remove('hidden');
   modal.style.display = 'flex';
@@ -205,8 +209,11 @@ function hideCurrentModal() {
   } else if (doiInputModal && doiInputModal.style.display === 'flex') {
     doiInputModal.classList.add('hidden');
     doiInputModal.style.display = 'none';
+  } else if (allSessionsModal && allSessionsModal.style.display === 'flex') {
+    allSessionsModal.classList.add('hidden');
+    allSessionsModal.style.display = 'none';
   }
-  
+
   // If there's a previous modal in the stack, show it
   if (modalStack.length > 0) {
     const previousModal = modalStack.pop();
@@ -232,9 +239,12 @@ function hideCurrentModal() {
     } else if (previousModal === 'doi-input') {
       doiInputModal.classList.remove('hidden');
       doiInputModal.style.display = 'flex';
+    } else if (previousModal === 'all-sessions') {
+      allSessionsModal.classList.remove('hidden');
+      allSessionsModal.style.display = 'flex';
     }
   }
-  
+
   debugLog('Modal stack after hiding:', modalStack);
 }
 
