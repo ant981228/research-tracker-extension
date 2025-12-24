@@ -29,27 +29,23 @@ button.edit-metadata-btn:hover,
 body {
   font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
   background-color: #f9f9f9;
-  width: 400px; /* Default width for popup mode */
-  min-width: 400px;
-  max-width: 400px;
+  width: 400px; /* Fixed width - matches original popup behavior */
   min-height: 300px;
   overflow-y: auto;
 }
 
-/* Narrow sidebar: allow shrinking below 400px */
-@media (max-width: 399px) {
+/* Narrow sidebar: allow shrinking below 350px */
+@media (max-width: 350px) {
   body {
     width: 100%;
     min-width: 0;
-    max-width: none;
   }
 }
 
-/* Wide sidebar: expand beyond 400px */
-@media (min-width: 450px) {
+/* Wide sidebar: expand beyond 500px */
+@media (min-width: 500px) {
   body {
     width: 100%;
-    max-width: none;
   }
 }
 
