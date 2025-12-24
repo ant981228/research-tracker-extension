@@ -29,10 +29,17 @@ button.edit-metadata-btn:hover,
 body {
   font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
   background-color: #f9f9f9;
-  width: 100%; /* Changed from 400px for sidebar support */
-  min-width: 320px; /* Add minimum width for very narrow sidebars */
+  width: 400px; /* Default width for browser action popup */
+  min-width: 320px; /* Minimum width for very narrow sidebars */
   min-height: 300px;
   overflow-y: auto;
+}
+
+/* When used in sidebar (wider than popup), allow full width */
+@media (min-width: 401px) {
+  body {
+    width: 100%;
+  }
 }
 
 .container {
@@ -837,21 +844,6 @@ h3 {
 
 /* Narrow sidebar mode (<350px) */
 @media (max-width: 350px) {
-  /* Stack session actions vertically */
-  .session-actions {
-    flex-direction: column;
-  }
-
-  /* Make buttons full width */
-  .session-actions button {
-    width: 100%;
-  }
-
-  /* Stack action buttons */
-  .action-buttons {
-    grid-template-columns: 1fr;
-  }
-
   /* CRITICAL: Single column metadata form for narrow widths */
   /* This ensures the edit metadata modal remains usable in narrow sidebars */
   .metadata-form-grid {
