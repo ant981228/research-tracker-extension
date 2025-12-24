@@ -3545,3 +3545,76 @@ async function closePopoutWindow() {
 }
 
 // Always-on-top functionality removed as it's not supported by Chrome extensions API
+
+// ============================================================================
+// SIDEBAR/POPUP MODE HANDLING
+// ============================================================================
+
+// Handle extension icon clicks
+chrome.action.onClicked.addListener(async (tab) => {
+  try {
+    // Get user preference for default mode
+    const result = await chrome.storage.local.get(['preferSidePanel']);
+    const useSidePanel = result.preferSidePanel ?? false; // Default to popup
+
+    if (useSidePanel && chrome.sidePanel) {
+      // Open as sidebar
+      await chrome.sidePanel.open({ windowId: tab.windowId });
+    } else {
+      // Open as popup window
+      await chrome.windows.create({
+        url: chrome.runtime.getURL('src/popup/popup.html'),
+        type: 'popup',
+        width: 400,
+        height: 600
+      });
+    }
+  } catch (error) {
+    console.error('Error opening extension:', error);
+    // Fallback to popup on error
+    chrome.windows.create({
+      url: chrome.runtime.getURL('src/popup/popup.html'),
+      type: 'popup',
+      width: 400,
+      height: 600
+    });
+  }
+});
+
+// Create context menu options on install/update
+chrome.runtime.onInstalled.addListener(() => {
+  // Clear existing menu items to avoid duplicates
+  chrome.contextMenus.removeAll(() => {
+    // Add "Open in sidebar" option
+    chrome.contextMenus.create({
+      id: 'openSidePanel',
+      title: 'Open in sidebar',
+      contexts: ['action']
+    });
+
+    // Add "Open in popup" option
+    chrome.contextMenus.create({
+      id: 'openPopup',
+      title: 'Open in popup',
+      contexts: ['action']
+    });
+  });
+});
+
+// Handle context menu clicks
+chrome.contextMenus.onClicked.addListener(async (info, tab) => {
+  try {
+    if (info.menuItemId === 'openSidePanel' && chrome.sidePanel) {
+      await chrome.sidePanel.open({ windowId: tab.windowId });
+    } else if (info.menuItemId === 'openPopup') {
+      await chrome.windows.create({
+        url: chrome.runtime.getURL('src/popup/popup.html'),
+        type: 'popup',
+        width: 400,
+        height: 600
+      });
+    }
+  } catch (error) {
+    console.error('Error opening extension from context menu:', error);
+  }
+});

@@ -84,6 +84,7 @@ let cancelSettingsBtn;
 let exportAllMetadataBtn;
 let clearAllMetadataBtn;
 let debugModeCheckbox;
+let preferSidePanelCheckbox;
 
 // Help Modal Elements
 let helpBtn;
@@ -324,6 +325,7 @@ function init() {
   replaceDatabaseUrlsCheckbox = document.getElementById('replace-database-urls');
   customDatabaseDomainsInput = document.getElementById('custom-database-domains');
   debugModeCheckbox = document.getElementById('debug-mode-enabled');
+  preferSidePanelCheckbox = document.getElementById('prefer-side-panel');
   saveSettingsBtn = document.getElementById('save-settings-btn');
   cancelSettingsBtn = document.getElementById('cancel-settings-btn');
   exportAllMetadataBtn = document.getElementById('export-all-metadata-btn');
@@ -2555,7 +2557,7 @@ async function copyCitation(url, title, buttonElement) {
 
 // Settings functions
 function loadCitationSettings() {
-  chrome.storage.local.get(['citationSettings'], (result) => {
+  chrome.storage.local.get(['citationSettings', 'preferSidePanel'], (result) => {
     if (result.citationSettings) {
       // Merge saved settings with defaults to ensure new properties exist
       citationSettings = {
@@ -2570,7 +2572,7 @@ function loadCitationSettings() {
       };
     }
     // If no saved settings, citationSettings already has the defaults
-    
+
     citationFormatSelect.value = citationSettings.format;
     customFormatTemplate.value = citationSettings.customTemplate || '';
     citationPreviewEnabled.checked = citationSettings.previewEnabled || false;
@@ -2579,7 +2581,12 @@ function loadCitationSettings() {
     replaceDatabaseUrlsCheckbox.checked = citationSettings.replaceDatabaseUrls || false;
     customDatabaseDomainsInput.value = citationSettings.customDatabaseDomains || '';
     debugModeCheckbox.checked = citationSettings.debugMode || false;
-    
+
+    // Load sidebar preference
+    if (preferSidePanelCheckbox) {
+      preferSidePanelCheckbox.checked = result.preferSidePanel ?? false;
+    }
+
     if (citationSettings.format === 'custom') {
       customFormatSection.style.display = 'block';
     } else {
@@ -2597,10 +2604,14 @@ function saveCitationSettings() {
   citationSettings.replaceDatabaseUrls = replaceDatabaseUrlsCheckbox.checked;
   citationSettings.customDatabaseDomains = customDatabaseDomainsInput.value;
   citationSettings.debugMode = debugModeCheckbox.checked;
-  
-  chrome.storage.local.set({ citationSettings }, () => {
+
+  // Save both citation settings and sidebar preference
+  chrome.storage.local.set({
+    citationSettings: citationSettings,
+    preferSidePanel: preferSidePanelCheckbox ? preferSidePanelCheckbox.checked : false
+  }, () => {
     debugLog('Citation settings saved');
-    
+
     // Notify all content scripts about the preview setting change
     chrome.tabs.query({}, (tabs) => {
       tabs.forEach(tab => {
@@ -2612,7 +2623,7 @@ function saveCitationSettings() {
         });
       });
     });
-    
+
     closeSettingsModal();
   });
 }

@@ -29,7 +29,8 @@ button.edit-metadata-btn:hover,
 body {
   font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
   background-color: #f9f9f9;
-  width: 400px;
+  width: 100%; /* Changed from 400px for sidebar support */
+  min-width: 320px; /* Add minimum width for very narrow sidebars */
   min-height: 300px;
   overflow-y: auto;
 }
@@ -604,13 +605,13 @@ h3 {
   border-radius: 5px;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
   width: 90%;
-  max-width: 380px;
+  max-width: min(600px, 90vw); /* Responsive to viewport width */
   max-height: 90vh;
   overflow-y: auto;
 }
 
 .wide-modal {
-  max-width: 480px;
+  max-width: min(700px, 95vw); /* Responsive to viewport width */
 }
 
 .modal-list {
@@ -828,5 +829,82 @@ h3 {
 
 .secondary-btn:hover {
   background-color: #7f8c8d !important;
+}
+
+/* ============================================================================
+   RESPONSIVE LAYOUT FOR SIDEBAR MODE
+   ============================================================================ */
+
+/* Narrow sidebar mode (<350px) */
+@media (max-width: 350px) {
+  /* Stack session actions vertically */
+  .session-actions {
+    flex-direction: column;
+  }
+
+  /* Make buttons full width */
+  .session-actions button {
+    width: 100%;
+  }
+
+  /* Stack action buttons */
+  .action-buttons {
+    grid-template-columns: 1fr;
+  }
+
+  /* CRITICAL: Single column metadata form for narrow widths */
+  /* This ensures the edit metadata modal remains usable in narrow sidebars */
+  .metadata-form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .metadata-form-grid .form-group.full-width {
+    grid-column: span 1;
+  }
+
+  /* Smaller font for very narrow widths */
+  body {
+    font-size: 12px;
+  }
+
+  h1 {
+    font-size: 18px;
+  }
+
+  h2 {
+    font-size: 14px;
+  }
+}
+
+/* Medium sidebar mode (350px-450px) - default popup size */
+@media (min-width: 351px) and (max-width: 450px) {
+  /* This is the existing popup size, no changes needed */
+}
+
+/* Wide sidebar mode (>450px) */
+@media (min-width: 451px) {
+  /* Show more sessions before scrolling */
+  #sessions-list {
+    max-height: 300px; /* Increased from 200px */
+  }
+
+  .history-list {
+    max-height: 180px; /* Increased from 120px */
+  }
+
+  .modal-list {
+    max-height: 400px; /* Increased from 300px */
+  }
+
+  /* Optionally show metadata form in 3 columns for very wide sidebars */
+  @media (min-width: 600px) {
+    .metadata-form-grid {
+      grid-template-columns: 1fr 1fr 1fr;
+    }
+
+    .metadata-form-grid .form-group.full-width {
+      grid-column: span 3;
+    }
+  }
 }
 
