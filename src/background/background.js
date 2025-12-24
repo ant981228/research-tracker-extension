@@ -539,7 +539,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       if (isRecording && currentSession && message.newName) {
         currentSession.name = message.newName;
         // Update the current session in storage
-        chrome.storage.local.set({ 
+        chrome.storage.local.set({
           [STORAGE_KEYS.CURRENT_SESSION]: currentSession,
           [STORAGE_KEYS.LAST_SAVE_TIMESTAMP]: Date.now()
         }, () => {
@@ -554,6 +554,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       } else {
         sendResponse({ success: false, error: 'Not recording or missing new name' });
       }
+      break;
+
+    case 'updateContextMenuCheckboxes':
+      // Update context menu checkboxes when settings modal changes preference
+      const useSidePanel = message.preferSidePanel ?? false;
+      chrome.contextMenus.update('setDefaultPopup', { checked: !useSidePanel });
+      chrome.contextMenus.update('setDefaultSidebar', { checked: useSidePanel });
+      sendResponse({ success: true });
       break;
       
     case 'renameSession':

@@ -2646,11 +2646,19 @@ function saveCitationSettings() {
   citationSettings.debugMode = debugModeCheckbox.checked;
 
   // Save both citation settings and sidebar preference
+  const newPreferSidePanel = preferSidePanelCheckbox ? preferSidePanelCheckbox.checked : false;
+
   chrome.storage.local.set({
     citationSettings: citationSettings,
-    preferSidePanel: preferSidePanelCheckbox ? preferSidePanelCheckbox.checked : false
+    preferSidePanel: newPreferSidePanel
   }, () => {
     debugLog('Citation settings saved');
+
+    // Update context menu checkboxes to match new preference
+    chrome.runtime.sendMessage({
+      action: 'updateContextMenuCheckboxes',
+      preferSidePanel: newPreferSidePanel
+    });
 
     // Notify all content scripts about the preview setting change
     chrome.tabs.query({}, (tabs) => {
