@@ -3550,17 +3550,13 @@ async function closePopoutWindow() {
 // SIDEBAR/POPUP MODE HANDLING
 // ============================================================================
 
-// Track original user preference and which windows have sidebar open
-let originalPreference = false;
-const sidebarOpenWindows = new Set();
-
 // Function to update popup behavior based on user preference
 async function updatePopupBehavior() {
   const result = await chrome.storage.local.get(['preferSidePanel']);
   const useSidePanel = result.preferSidePanel ?? false;
 
   if (useSidePanel && chrome.sidePanel) {
-    // Disable default popup so onClicked can fire
+    // Disable default popup so onClicked can fire for sidebar
     await chrome.action.setPopup({ popup: '' });
   } else {
     // Enable default popup (native browser action popup)
@@ -3568,30 +3564,22 @@ async function updatePopupBehavior() {
   }
 }
 
-// Initialize: load original preference
-chrome.storage.local.get(['preferSidePanel'], (result) => {
-  originalPreference = result.preferSidePanel ?? false;
-  updatePopupBehavior();
-});
+// Initialize: set default behavior
+updatePopupBehavior();
 
 // Listen for storage changes to update popup behavior when user changes preference
 chrome.storage.onChanged.addListener((changes, areaName) => {
   if (areaName === 'local' && changes.preferSidePanel) {
-    // Only update original preference if no sidebars are currently open
-    if (sidebarOpenWindows.size === 0) {
-      originalPreference = changes.preferSidePanel.newValue ?? false;
-    }
     updatePopupBehavior();
   }
 });
 
-// Handle extension icon clicks (only fires when popup is disabled)
+// Handle extension icon clicks (only fires when popup is disabled, i.e., sidebar mode)
 chrome.action.onClicked.addListener(async (tab) => {
   try {
     if (chrome.sidePanel) {
       // Open as sidebar
       await chrome.sidePanel.open({ windowId: tab.windowId });
-      sidebarOpenWindows.add(tab.windowId);
     }
   } catch (error) {
     console.error('Error opening sidebar:', error);
@@ -3602,44 +3590,47 @@ chrome.action.onClicked.addListener(async (tab) => {
 chrome.runtime.onInstalled.addListener(() => {
   // Clear existing menu items to avoid duplicates
   chrome.contextMenus.removeAll(() => {
-    // Add "Open in sidebar" option
+    // Add checkbox menu items for default behavior
     chrome.contextMenus.create({
-      id: 'openSidePanel',
-      title: 'Open in sidebar',
-      contexts: ['action']
+      id: 'setDefaultPopup',
+      title: 'Use popup by default',
+      type: 'checkbox',
+      contexts: ['action'],
+      checked: true
     });
+
+    chrome.contextMenus.create({
+      id: 'setDefaultSidebar',
+      title: 'Use sidebar by default',
+      type: 'checkbox',
+      contexts: ['action'],
+      checked: false
+    });
+  });
+
+  // Update checkbox states based on current preference
+  chrome.storage.local.get(['preferSidePanel'], (result) => {
+    const useSidePanel = result.preferSidePanel ?? false;
+    chrome.contextMenus.update('setDefaultPopup', { checked: !useSidePanel });
+    chrome.contextMenus.update('setDefaultSidebar', { checked: useSidePanel });
   });
 });
 
 // Handle context menu clicks
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   try {
-    if (info.menuItemId === 'openSidePanel' && chrome.sidePanel) {
-      // Save original preference if this is the first sidebar opening
-      if (sidebarOpenWindows.size === 0) {
-        const result = await chrome.storage.local.get(['preferSidePanel']);
-        originalPreference = result.preferSidePanel ?? false;
-
-        // Temporarily switch to sidebar mode to prevent popup
-        await chrome.storage.local.set({ preferSidePanel: true });
-      }
-
-      await chrome.sidePanel.open({ windowId: tab.windowId });
-      sidebarOpenWindows.add(tab.windowId);
+    if (info.menuItemId === 'setDefaultPopup') {
+      // Set default to popup
+      await chrome.storage.local.set({ preferSidePanel: false });
+      chrome.contextMenus.update('setDefaultPopup', { checked: true });
+      chrome.contextMenus.update('setDefaultSidebar', { checked: false });
+    } else if (info.menuItemId === 'setDefaultSidebar') {
+      // Set default to sidebar
+      await chrome.storage.local.set({ preferSidePanel: true });
+      chrome.contextMenus.update('setDefaultPopup', { checked: false });
+      chrome.contextMenus.update('setDefaultSidebar', { checked: true });
     }
   } catch (error) {
-    console.error('Error opening extension from context menu:', error);
-  }
-});
-
-// Listen for window closures to restore original preference
-chrome.windows.onRemoved.addListener(async (windowId) => {
-  if (sidebarOpenWindows.has(windowId)) {
-    sidebarOpenWindows.delete(windowId);
-
-    // If no more sidebars are open, restore original preference
-    if (sidebarOpenWindows.size === 0) {
-      await chrome.storage.local.set({ preferSidePanel: originalPreference });
-    }
+    console.error('Error handling context menu click:', error);
   }
 });

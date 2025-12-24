@@ -553,6 +553,15 @@ function init() {
     getCurrentTabUrl();
     refreshStatus();
   });
+
+  // Listen for preference changes to close and reopen
+  chrome.storage.onChanged.addListener((changes, areaName) => {
+    if (areaName === 'local' && changes.preferSidePanel) {
+      // Preference changed - close this view
+      window.close();
+      // The new default will open automatically when user clicks icon again
+    }
+  });
 }
 
 // Function to update activity status in the background
