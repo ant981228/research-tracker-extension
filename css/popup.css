@@ -29,24 +29,9 @@ button.edit-metadata-btn:hover,
 body {
   font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
   background-color: #f9f9f9;
-  width: 600px; /* Wider popup for better visibility */
+  width: 400px;
   min-height: 300px;
   overflow-y: auto;
-}
-
-/* Narrow sidebar: allow shrinking below 350px */
-@media (max-width: 350px) {
-  body {
-    width: 100%;
-    min-width: 0;
-  }
-}
-
-/* Medium to wide sidebar: expand to full width */
-@media (min-width: 700px) {
-  body {
-    width: 100%;
-  }
 }
 
 .container {
