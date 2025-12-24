@@ -898,3 +898,24 @@ h3 {
   }
 }
 
+/* ============================================================================
+   SIDEBAR CITATION PREVIEW
+   ============================================================================ */
+
+/* Position sidebar citation preview at bottom in sidebar mode */
+body.sidebar-mode #sidebar-citation-preview {
+  position: sticky;
+  bottom: 0;
+  margin-top: auto;
+  border-top: 2px solid #ddd;
+  background: white;
+  z-index: 100;
+}
+
+/* Make container use flexbox to push citation preview to bottom */
+body.sidebar-mode .container {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+

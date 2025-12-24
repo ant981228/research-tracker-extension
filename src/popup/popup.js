@@ -113,6 +113,7 @@ let isRecording = false;
 let isPaused = false;
 let currentSession = null;
 let currentUrl = null;
+let isSidebarMode = false; // Track if we're in sidebar mode
 let citationSettings = {
   format: 'apa',
   customTemplate: '',
@@ -258,7 +259,7 @@ function init() {
   // Detect if we're in sidebar mode and add class for responsive styling
   // In sidebar, the window width will typically be wider than a popup
   // or the URL will contain certain indicators
-  const isSidebarMode = window.innerWidth > 500 || window.innerWidth < 380;
+  isSidebarMode = window.innerWidth > 500 || window.innerWidth < 380;
   if (isSidebarMode) {
     // Likely in sidebar mode (either wide or narrow sidebar)
     document.body.classList.add('sidebar-mode');
@@ -655,7 +656,7 @@ async function updateSidebarCitationPreview() {
 
     if (metadataResponse && metadataResponse.metadata) {
       // Generate citation
-      const citation = await generateCitation(metadataResponse.metadata, settings.format, settings.customTemplate);
+      const citation = generateCitation(metadataResponse.metadata, currentUrl, settings.format, settings.customTemplate);
       sidebarCitationContent.textContent = citation;
     } else {
       sidebarCitationContent.textContent = 'No citation available for this page.';
