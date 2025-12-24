@@ -602,14 +602,24 @@ function init() {
       }
     });
 
+    // Establish a connection port to track sidebar lifecycle
+    const port = chrome.runtime.connect({ name: 'sidebar-lifecycle' });
+    // Send initial message with tab ID
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      if (tabs.length > 0) {
+        port.postMessage({ type: 'sidebarOpened', tabId: tabs[0].id });
+      }
+    });
+
     // Start updating sidebar citation preview
     updateSidebarCitationPreview();
     // Update every 2 seconds while in sidebar mode
     setInterval(updateSidebarCitationPreview, 2000);
   }
 
-  // Listen for window close to restore page overlay citation preview
-  window.addEventListener('beforeunload', () => {
+  // Listen for window close/hide to restore page overlay citation preview
+  // Using both pagehide and visibilitychange for better compatibility
+  const restorePageOverlay = () => {
     if (isSidebarMode) {
       // Tell content script to show page overlay citation preview again
       chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
@@ -622,7 +632,108 @@ function init() {
         }
       });
     }
+  };
+
+  window.addEventListener('pagehide', restorePageOverlay);
+  window.addEventListener('beforeunload', restorePageOverlay);
+
+  // Also listen for visibility change
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden' && isSidebarMode) {
+      restorePageOverlay();
+    }
   });
+}
+
+// Function to check if citation preview should be excluded for a URL
+function shouldExcludeCitationPreview(url) {
+  if (!url) return true;
+
+  try {
+    const urlObj = new URL(url);
+    const hostname = urlObj.hostname;
+
+    // Check if URL ends with .pdf
+    if (url.toLowerCase().endsWith('.pdf')) {
+      return true;
+    }
+
+    // Check for specific GitHub subdirectory
+    if (hostname === 'github.com' && url.includes('/ant981228')) {
+      return true;
+    }
+
+    // Specific site exclusions
+    const excludedDomains = [
+      'ant981228.github.io',
+      'youtube.com',
+      'www.youtube.com',
+      'facebook.com',
+      'www.facebook.com',
+      'google.com',
+      'www.google.com',
+      'scholar.google.com',
+      'bing.com',
+      'www.bing.com',
+      'yahoo.com',
+      'www.yahoo.com',
+      'duckduckgo.com',
+      'www.duckduckgo.com',
+      'instagram.com',
+      'www.instagram.com',
+      'tiktok.com',
+      'www.tiktok.com',
+      'pinterest.com',
+      'www.pinterest.com',
+      'snapchat.com',
+      'www.snapchat.com',
+      'download.ssrn.com'
+    ];
+
+    // Check if current hostname is in excluded list (exact match)
+    if (excludedDomains.includes(hostname)) {
+      return true;
+    }
+
+    // Check with normalized matching for proxy domains
+    const normalizedHostname = hostname.replace(/[-_.]/g, '');
+    for (const excludedDomain of excludedDomains) {
+      const normalizedExcluded = excludedDomain.replace(/[-_.]/g, '');
+      if (normalizedHostname.includes(normalizedExcluded)) {
+        return true;
+      }
+    }
+
+    // Check for Google search results pages
+    if (hostname.match(/^(www\.)?google\.[a-z.]+$/) && url.includes('/search')) {
+      return true;
+    }
+
+    // Check for Lexis search pages (but not document pages)
+    const lexisDomains = ['advance.lexis.com', 'www.lexis.com', 'lexisnexis.com', 'www.lexisnexis.com'];
+    const normalizedLexisDomains = lexisDomains.map(d => d.replace(/[-_.]/g, ''));
+
+    let isLexisDomain = false;
+    if (lexisDomains.includes(hostname)) {
+      isLexisDomain = true;
+    } else {
+      for (const normalizedLexis of normalizedLexisDomains) {
+        if (normalizedHostname.includes(normalizedLexis)) {
+          isLexisDomain = true;
+          break;
+        }
+      }
+    }
+
+    if (isLexisDomain && url.includes('/search/')) {
+      return true;
+    }
+
+    return false;
+  } catch (error) {
+    debugLog('Error checking citation preview exclusion:', error);
+    return true;
+  }
 }
 
 // Function to update sidebar citation preview
@@ -642,10 +753,31 @@ async function updateSidebarCitationPreview() {
         sidebarCitationPreview.style.display = 'none';
       }
       return;
-    } else {
+    }
+
+    // Check if this URL should be excluded
+    if (shouldExcludeCitationPreview(currentUrl)) {
       if (sidebarCitationPreview) {
-        sidebarCitationPreview.style.display = 'block';
+        sidebarCitationPreview.style.display = 'none';
       }
+      return;
+    }
+
+    // Check if recording is active
+    const recordingStatus = await chrome.runtime.sendMessage({
+      action: 'getRecordingStatus'
+    });
+
+    if (!recordingStatus || !recordingStatus.isRecording) {
+      if (sidebarCitationPreview) {
+        sidebarCitationPreview.style.display = 'none';
+      }
+      return;
+    }
+
+    // All checks passed - show the preview
+    if (sidebarCitationPreview) {
+      sidebarCitationPreview.style.display = 'block';
     }
 
     // Get metadata for current URL

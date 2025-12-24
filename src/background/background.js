@@ -1225,20 +1225,43 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       break;
       
     case 'openPopupAndEditMetadata':
-      (async () => {
-        try {
-          // Store the URL that should be edited
-          chrome.storage.local.set({ 'pendingEditUrl': message.url });
-          
-          // Open the popup window
-          chrome.action.openPopup();
-          
-          sendResponse({ success: true });
-        } catch (e) {
-          console.error('Error opening popup for editing:', e);
-          sendResponse({ success: false, error: e.message });
-        }
-      })();
+      // CRITICAL: Must open sidebar synchronously to preserve user gesture
+      // Do NOT use async/await here or user gesture will be lost
+      try {
+        // Store the URL that should be edited (this can be async, it's not blocking)
+        chrome.storage.local.set({ 'pendingEditUrl': message.url });
+
+        // Check user preference synchronously using callback (not async/await)
+        chrome.storage.local.get(['preferSidePanel'], (result) => {
+          const useSidePanel = result.preferSidePanel ?? false;
+
+          if (useSidePanel && chrome.sidePanel) {
+            // Open sidebar - must happen synchronously within this callback
+            if (sender.tab && sender.tab.windowId) {
+              chrome.sidePanel.open({ windowId: sender.tab.windowId }).catch((error) => {
+                console.error('Error opening sidebar:', error);
+                sendResponse({ success: false, error: error.message });
+              });
+            } else {
+              // Fallback: get current window
+              chrome.windows.getCurrent((window) => {
+                chrome.sidePanel.open({ windowId: window.id }).catch((error) => {
+                  console.error('Error opening sidebar:', error);
+                  sendResponse({ success: false, error: error.message });
+                });
+              });
+            }
+            sendResponse({ success: true });
+          } else {
+            // Open popup
+            chrome.action.openPopup();
+            sendResponse({ success: true });
+          }
+        });
+      } catch (e) {
+        console.error('Error in openPopupAndEditMetadata:', e);
+        sendResponse({ success: false, error: e.message });
+      }
       return true; // Keep the message channel open for async response
       break;
       
@@ -3640,5 +3663,33 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     }
   } catch (error) {
     console.error('Error handling context menu click:', error);
+  }
+});
+
+// Track sidebar lifecycle to restore page overlay when sidebar closes
+chrome.runtime.onConnect.addListener((port) => {
+  if (port.name === 'sidebar-lifecycle') {
+    let sidebarTabId = null;
+
+    // Listen for messages from the sidebar
+    port.onMessage.addListener((msg) => {
+      if (msg.type === 'sidebarOpened' && msg.tabId) {
+        sidebarTabId = msg.tabId;
+        debugLog('Sidebar opened for tab:', sidebarTabId);
+      }
+    });
+
+    // When port disconnects, sidebar has closed
+    port.onDisconnect.addListener(() => {
+      debugLog('Sidebar closed for tab:', sidebarTabId);
+      if (sidebarTabId) {
+        // Restore page overlay citation preview
+        chrome.tabs.sendMessage(sidebarTabId, {
+          action: 'showCitationPreview'
+        }).catch((error) => {
+          debugLog('Error restoring page overlay:', error);
+        });
+      }
+    });
   }
 });
