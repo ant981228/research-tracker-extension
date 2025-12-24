@@ -35,10 +35,17 @@ body {
   overflow-y: auto;
 }
 
-/* Override for sidebar: allow flexible width beyond 400px */
+/* Override for sidebar: allow flexible width at any size */
+@media (max-width: 399px) {
+  body {
+    min-width: 100%; /* Allow shrinking below 400px in narrow sidebar */
+    max-width: none;
+  }
+}
+
 @media (min-width: 450px) {
   body {
-    max-width: none; /* Remove max-width constraint in sidebar */
+    max-width: none; /* Remove max-width constraint in wide sidebar */
   }
 }
 
