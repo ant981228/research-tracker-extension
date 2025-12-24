@@ -29,16 +29,16 @@ button.edit-metadata-btn:hover,
 body {
   font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
   background-color: #f9f9f9;
-  width: 400px; /* Default width for browser action popup */
-  min-width: 320px; /* Minimum width for very narrow sidebars */
+  min-width: 400px; /* Minimum width ensures popup is at least 400px */
+  max-width: 400px; /* Maximum width for popup mode */
   min-height: 300px;
   overflow-y: auto;
 }
 
-/* When used in sidebar (wider than popup), allow full width */
-@media (min-width: 401px) {
+/* Override for sidebar: allow flexible width beyond 400px */
+@media (min-width: 450px) {
   body {
-    width: 100%;
+    max-width: none; /* Remove max-width constraint in sidebar */
   }
 }
 
