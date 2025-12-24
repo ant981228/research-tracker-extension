@@ -29,23 +29,27 @@ button.edit-metadata-btn:hover,
 body {
   font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
   background-color: #f9f9f9;
-  min-width: 400px; /* Minimum width ensures popup is at least 400px */
-  max-width: 400px; /* Maximum width for popup mode */
+  width: 400px; /* Default width for popup mode */
+  min-width: 400px;
+  max-width: 400px;
   min-height: 300px;
   overflow-y: auto;
 }
 
-/* Override for sidebar: allow flexible width at any size */
+/* Narrow sidebar: allow shrinking below 400px */
 @media (max-width: 399px) {
   body {
-    min-width: 100%; /* Allow shrinking below 400px in narrow sidebar */
+    width: 100%;
+    min-width: 0;
     max-width: none;
   }
 }
 
+/* Wide sidebar: expand beyond 400px */
 @media (min-width: 450px) {
   body {
-    max-width: none; /* Remove max-width constraint in wide sidebar */
+    width: 100%;
+    max-width: none;
   }
 }
 
