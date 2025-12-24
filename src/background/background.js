@@ -3550,7 +3550,8 @@ async function closePopoutWindow() {
 // SIDEBAR/POPUP MODE HANDLING
 // ============================================================================
 
-// Track which windows have sidebar open
+// Track original user preference and which windows have sidebar open
+let originalPreference = false;
 const sidebarOpenWindows = new Set();
 
 // Function to update popup behavior based on user preference
@@ -3567,12 +3568,19 @@ async function updatePopupBehavior() {
   }
 }
 
-// Update popup behavior on startup
-updatePopupBehavior();
+// Initialize: load original preference
+chrome.storage.local.get(['preferSidePanel'], (result) => {
+  originalPreference = result.preferSidePanel ?? false;
+  updatePopupBehavior();
+});
 
 // Listen for storage changes to update popup behavior when user changes preference
 chrome.storage.onChanged.addListener((changes, areaName) => {
   if (areaName === 'local' && changes.preferSidePanel) {
+    // Only update original preference if no sidebars are currently open
+    if (sidebarOpenWindows.size === 0) {
+      originalPreference = changes.preferSidePanel.newValue ?? false;
+    }
     updatePopupBehavior();
   }
 });
@@ -3581,7 +3589,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
 chrome.action.onClicked.addListener(async (tab) => {
   try {
     if (chrome.sidePanel) {
-      // Open as sidebar and track it
+      // Open as sidebar
       await chrome.sidePanel.open({ windowId: tab.windowId });
       sidebarOpenWindows.add(tab.windowId);
     }
@@ -3607,20 +3615,31 @@ chrome.runtime.onInstalled.addListener(() => {
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   try {
     if (info.menuItemId === 'openSidePanel' && chrome.sidePanel) {
+      // Save original preference if this is the first sidebar opening
+      if (sidebarOpenWindows.size === 0) {
+        const result = await chrome.storage.local.get(['preferSidePanel']);
+        originalPreference = result.preferSidePanel ?? false;
+
+        // Temporarily switch to sidebar mode to prevent popup
+        await chrome.storage.local.set({ preferSidePanel: true });
+      }
+
       await chrome.sidePanel.open({ windowId: tab.windowId });
       sidebarOpenWindows.add(tab.windowId);
-      // Store that sidebar is open for this window
-      await chrome.storage.local.set({ [`sidebarOpen_${tab.windowId}`]: true });
     }
   } catch (error) {
     console.error('Error opening extension from context menu:', error);
   }
 });
 
-// Listen for window closures to clean up tracking
-chrome.windows.onRemoved.addListener((windowId) => {
-  sidebarOpenWindows.delete(windowId);
-  chrome.storage.local.remove([`sidebarOpen_${windowId}`]);
-  // Re-evaluate popup behavior
-  updatePopupBehavior();
+// Listen for window closures to restore original preference
+chrome.windows.onRemoved.addListener(async (windowId) => {
+  if (sidebarOpenWindows.has(windowId)) {
+    sidebarOpenWindows.delete(windowId);
+
+    // If no more sidebars are open, restore original preference
+    if (sidebarOpenWindows.size === 0) {
+      await chrome.storage.local.set({ preferSidePanel: originalPreference });
+    }
+  }
 });
