@@ -39,10 +39,12 @@ Research Tracker helps you document your research process by automatically track
 
 ### ⚙️ Metadata Management
 - Edit and enhance page metadata through keyboard shortcuts (Ctrl/Cmd+1-8)
+- Auto-capitalization: Automatically format text entered via keyboard shortcuts using Chicago Manual of Style title case rules
 - Manual metadata editing with automatic extraction protection
 - DOI-based metadata enhancement from external APIs
 - Pending edits preservation across popup sessions
 - Cross-session metadata persistence
+- URL tracking parameter removal: Optionally strip tracking parameters (utm_*, fbclid, gclid, etc.) from URLs in citations
 
 ### 💾 Export Options
 - **JSON format**: Structured data for programmatic processing
@@ -116,12 +118,20 @@ Research Tracker helps you document your research process by automatically track
 **Note:** The Ctrl+Q citation shortcut is interoperable with the [Fast Debate Paste utility](https://debate-decoded.ghost.io/leveling-up-verbatim/), allowing seamless integration with debate research workflows.
 
 ### Settings & Configuration
-- **Citation Settings**: Choose citation format (APA, MLA, Chicago, Harvard, IEEE, or custom)
-- **Citation Preview**: Enable/disable floating citation preview on web pages
-- **URL Replacement**: Replace URLs with DOIs or database names in citations
-- **Custom Database Domains**: Add your own database domain mappings
-- **Excluded Domains**: Specify domains to exclude from research tracking
-- **Debug Mode**: Enable detailed console logging for troubleshooting issues
+- **Display Settings**:
+  - Toggle between popup and sidebar mode (requires Chrome 114+)
+  - Enable/disable floating citation preview on web pages
+- **Citation Settings**:
+  - Choose citation format (APA, MLA, Chicago, Harvard, IEEE, or custom)
+  - Auto-capitalize metadata entered via keyboard shortcuts
+  - Remove tracking parameters from URLs
+  - Replace URLs with DOIs or database names in citations
+  - Custom database domain mappings
+- **Tracker Settings**:
+  - Specify domains to exclude from research tracking
+  - Export and delete all metadata
+- **Developer Settings**:
+  - Enable detailed console logging for troubleshooting issues
 
 ## Privacy
 
