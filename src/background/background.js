@@ -10,6 +10,100 @@ function debugLog(...args) {
   });
 }
 
+// URL Cleaning - Remove tracking parameters from URLs
+function cleanUrl(urlString) {
+  try {
+    const url = new URL(urlString);
+
+    // Global tracking patterns to remove
+    const trackingPatterns = [
+      // UTM parameters (Google Analytics, email marketing)
+      /^utm_/i, /^mtm_/i,
+
+      // Click IDs
+      'gclid', 'gbraid', 'wbraid', 'dclid', 'gclsrc',
+      'fbclid', 'msclkid', 'yclid', 'srsltid',
+
+      // Analytics & Tracking
+      '_ga', '_gl', /^ga_/,
+      'mc_eid', 'mc_cid', 'mkt_tok',
+
+      // Social media tracking
+      'igshid', 'igsh', '__tn__', 'share_app_name', 'u_code', 'share_iid', 'tt_from',
+      'trk', 'trkInfo', 'li_fat_id', 'src', 'ref_url', 'ref_src',
+
+      // Google search tracking
+      'ved', 'ei', 'uact', 'sxsrf', 'iflsig',
+
+      // Session tracking
+      /phpsessid/i, /jsessionid/i, /aspsessionid/i, 'sessionid', 'sid',
+
+      // Cache busting
+      '_t', 'nocache', 'cb', 'cache', 'timestamp',
+
+      // Email marketing
+      /^fb_/, /^mc_/, /^pk_/, /^piwik_/
+    ];
+
+    // Domain-specific tracking parameters
+    const domainRules = {
+      'amazon.com': [/^ref/, /^pd_rd_/, /^pf_rd_/, 'qid', 'sr', 'keywords', 'tag', 'linkCode', 'linkId', 'th', 'psc'],
+      'youtube.com': ['si', 'feature'],
+      'youtu.be': ['si', 'feature']
+    };
+
+    // Essential parameters to preserve (never remove)
+    const preserveParams = [
+      // Search & Content
+      'q', 'query', 'search', 's',
+      // Identifiers
+      'id', 'article_id', 'post_id', 'v',
+      // Pagination
+      'page', 'p', 'offset', 'limit', 'start',
+      // Filtering & Sorting
+      'sort', 'filter', 'category', 'tag', 'order', 'dir',
+      // Localization
+      'lang', 'locale', 'hl', 'gl',
+      // Academic identifiers
+      'doi', 'pmid', 'arxiv', 'issn', 'isbn'
+    ];
+
+    // Get domain-specific rules
+    const domain = url.hostname.replace('www.', '');
+    const domainSpecificPatterns = domainRules[domain] || [];
+    const allTrackingPatterns = [...trackingPatterns, ...domainSpecificPatterns];
+
+    // Determine which parameters to remove
+    const keysToRemove = [];
+    for (const key of url.searchParams.keys()) {
+      // Skip preserved parameters
+      if (preserveParams.includes(key.toLowerCase())) {
+        continue;
+      }
+
+      // Check if matches tracking patterns
+      const isTracking = allTrackingPatterns.some(pattern => {
+        if (pattern instanceof RegExp) {
+          return pattern.test(key);
+        }
+        return key.toLowerCase() === pattern.toLowerCase();
+      });
+
+      if (isTracking) {
+        keysToRemove.push(key);
+      }
+    }
+
+    // Remove tracking parameters
+    keysToRemove.forEach(key => url.searchParams.delete(key));
+
+    return url.toString();
+  } catch (error) {
+    console.error('Error cleaning URL:', error);
+    return urlString;  // Return original if error
+  }
+}
+
 // Storage keys
 const STORAGE_KEYS = {
   IS_RECORDING: 'isRecording',
@@ -342,12 +436,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
               sendResponse({ success: false, error: 'Not recording' });
               return;
             }
-            
+
             // Check if this is a manual update (from popup) vs automatic
             const isManualUpdate = message.isManualUpdate || false;
             const isAutomaticUpdate = message.isAutomaticUpdate || false;
-            
-            // Get or create metadata object
+
+            // Get or create metadata object (always use original URL for storage)
             const { id: metadataId, metadataObj } = await getOrCreateMetadataObject(message.url);
             
             // Protect manual edits from automatic updates
@@ -1167,6 +1261,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       
     case 'getRecordingStatus':
       sendResponse({ success: true, isRecording });
+      break;
+
+    case 'isSidebarOpen':
+      // Check if sidebar is open for the sender's window
+      if (sender.tab && sender.tab.windowId) {
+        const isSidebarOpen = sidebarOpenWindows.has(sender.tab.windowId);
+        sendResponse({ success: true, isSidebarOpen });
+      } else {
+        sendResponse({ success: false, isSidebarOpen: false });
+      }
       break;
       
     case 'exportAllMetadata':
@@ -3666,22 +3770,36 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   }
 });
 
+// Track which windows have the sidebar open
+const sidebarOpenWindows = new Set();
+
 // Track sidebar lifecycle to restore page overlay when sidebar closes
 chrome.runtime.onConnect.addListener((port) => {
   if (port.name === 'sidebar-lifecycle') {
     let sidebarTabId = null;
+    let sidebarWindowId = null;
 
     // Listen for messages from the sidebar
     port.onMessage.addListener((msg) => {
       if (msg.type === 'sidebarOpened' && msg.tabId) {
         sidebarTabId = msg.tabId;
-        debugLog('Sidebar opened for tab:', sidebarTabId);
+        // Get window ID for this tab
+        chrome.tabs.get(msg.tabId, (tab) => {
+          if (tab && tab.windowId) {
+            sidebarWindowId = tab.windowId;
+            sidebarOpenWindows.add(sidebarWindowId);
+            debugLog('Sidebar opened for tab:', sidebarTabId, 'window:', sidebarWindowId);
+          }
+        });
       }
     });
 
     // When port disconnects, sidebar has closed
     port.onDisconnect.addListener(() => {
-      debugLog('Sidebar closed for tab:', sidebarTabId);
+      debugLog('Sidebar closed for tab:', sidebarTabId, 'window:', sidebarWindowId);
+      if (sidebarWindowId) {
+        sidebarOpenWindows.delete(sidebarWindowId);
+      }
       if (sidebarTabId) {
         // Restore page overlay citation preview
         chrome.tabs.sendMessage(sidebarTabId, {

@@ -84,7 +84,10 @@ let cancelSettingsBtn;
 let exportAllMetadataBtn;
 let clearAllMetadataBtn;
 let debugModeCheckbox;
-let preferSidePanelCheckbox;
+let viewModePopupRadio;
+let viewModeSidebarRadio;
+let autoCapitalizeCheckbox;
+let cleanUrlsCheckbox;
 
 // Help Modal Elements
 let helpBtn;
@@ -340,7 +343,10 @@ function init() {
   replaceDatabaseUrlsCheckbox = document.getElementById('replace-database-urls');
   customDatabaseDomainsInput = document.getElementById('custom-database-domains');
   debugModeCheckbox = document.getElementById('debug-mode-enabled');
-  preferSidePanelCheckbox = document.getElementById('prefer-side-panel');
+  viewModePopupRadio = document.getElementById('view-mode-popup');
+  viewModeSidebarRadio = document.getElementById('view-mode-sidebar');
+  autoCapitalizeCheckbox = document.getElementById('auto-capitalize-enabled');
+  cleanUrlsCheckbox = document.getElementById('clean-urls-enabled');
   saveSettingsBtn = document.getElementById('save-settings-btn');
   cancelSettingsBtn = document.getElementById('cancel-settings-btn');
   exportAllMetadataBtn = document.getElementById('export-all-metadata-btn');
@@ -585,9 +591,13 @@ function init() {
     // Setup edit button handler
     if (sidebarCitationEditBtn) {
       sidebarCitationEditBtn.addEventListener('click', () => {
-        if (currentUrl) {
-          openMetadataModal(currentUrl);
-        }
+        // Get current active tab URL and set it as selectedPageUrl
+        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+          if (tabs && tabs.length > 0) {
+            selectedPageUrl = tabs[0].url;
+            openMetadataModal();
+          }
+        });
       });
     }
 
@@ -738,11 +748,18 @@ function shouldExcludeCitationPreview(url) {
 
 // Function to update sidebar citation preview
 async function updateSidebarCitationPreview() {
-  if (!sidebarCitationContent || !currentUrl) {
+  if (!sidebarCitationContent) {
     return;
   }
 
   try {
+    // Get the current active tab URL (updates as user navigates)
+    const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tabs || tabs.length === 0) {
+      return;
+    }
+    currentUrl = tabs[0].url;
+
     // Get citation settings
     const result = await chrome.storage.local.get(['citationSettings']);
     const settings = result.citationSettings || {};
@@ -2645,18 +2662,18 @@ function formatAuthors(authorStr, format) {
 function generateCitation(metadata, url, format, customTemplate) {
   const template = format === 'custom' ? customTemplate : citationFormats[format];
   if (!template) return 'Citation format not found';
-  
+
   const dateParts = formatDateParts(metadata.date || metadata.publishDate);
   const today = new Date();
-  const accessDate = today.toLocaleDateString('en-US', { 
-    month: 'long', 
-    day: 'numeric', 
-    year: 'numeric' 
+  const accessDate = today.toLocaleDateString('en-US', {
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric'
   });
   const accessDateShort = `${String(today.getMonth() + 1).padStart(2, '0')}/${String(today.getDate()).padStart(2, '0')}/${today.getFullYear()}`;
-  
+
   const authorFormats = formatAuthors(metadata.author, format);
-  
+
   // Helper function to format pages field
   const formatPages = (pages) => {
     if (!pages || pages.trim() === '') return '';
@@ -2667,9 +2684,86 @@ function generateCitation(metadata, url, format, customTemplate) {
     }
     return trimmed;
   };
-  
+
+  // Helper function to clean tracking parameters from URL
+  const cleanUrlForCitation = (urlString) => {
+    try {
+      const urlObj = new URL(urlString);
+
+      // Global tracking patterns to remove
+      const trackingPatterns = [
+        /^utm_/i, /^mtm_/i,
+        'gclid', 'gbraid', 'wbraid', 'dclid', 'gclsrc',
+        'fbclid', 'msclkid', 'yclid', 'srsltid',
+        '_ga', '_gl', /^ga_/,
+        'mc_eid', 'mc_cid', 'mkt_tok',
+        'igshid', 'igsh', '__tn__', 'share_app_name', 'u_code', 'share_iid', 'tt_from',
+        'trk', 'trkInfo', 'li_fat_id', 'src', 'ref_url', 'ref_src',
+        'ved', 'ei', 'uact', 'sxsrf', 'iflsig',
+        /phpsessid/i, /jsessionid/i, /aspsessionid/i, 'sessionid', 'sid',
+        '_t', 'nocache', 'cb', 'cache', 'timestamp',
+        /^fb_/, /^mc_/, /^pk_/, /^piwik_/
+      ];
+
+      // Domain-specific tracking parameters
+      const domainRules = {
+        'amazon.com': [/^ref/, /^pd_rd_/, /^pf_rd_/, 'qid', 'sr', 'keywords', 'tag', 'linkCode', 'linkId', 'th', 'psc'],
+        'youtube.com': ['si', 'feature'],
+        'youtu.be': ['si', 'feature']
+      };
+
+      // Essential parameters to preserve
+      const preserveParams = [
+        'q', 'query', 'search', 's',
+        'id', 'article_id', 'post_id', 'v',
+        'page', 'p', 'offset', 'limit', 'start',
+        'sort', 'filter', 'category', 'tag', 'order', 'dir',
+        'lang', 'locale', 'hl', 'gl',
+        'doi', 'pmid', 'arxiv', 'issn', 'isbn'
+      ];
+
+      // Get domain-specific rules
+      const domain = urlObj.hostname.replace('www.', '');
+      const domainSpecificPatterns = domainRules[domain] || [];
+      const allTrackingPatterns = [...trackingPatterns, ...domainSpecificPatterns];
+
+      // Determine which parameters to remove
+      const keysToRemove = [];
+      for (const key of urlObj.searchParams.keys()) {
+        if (preserveParams.includes(key.toLowerCase())) {
+          continue;
+        }
+
+        const isTracking = allTrackingPatterns.some(pattern => {
+          if (pattern instanceof RegExp) {
+            return pattern.test(key);
+          }
+          return key.toLowerCase() === pattern.toLowerCase();
+        });
+
+        if (isTracking) {
+          keysToRemove.push(key);
+        }
+      }
+
+      // Remove tracking parameters
+      keysToRemove.forEach(key => urlObj.searchParams.delete(key));
+
+      return urlObj.toString();
+    } catch (error) {
+      console.error('Error cleaning URL for citation:', error);
+      return urlString;
+    }
+  };
+
   // Helper function to replace URL based on citation settings
   const replaceUrl = (originalUrl, metadata, settings) => {
+    // First, clean tracking parameters if enabled
+    let processedUrl = originalUrl;
+    if (settings.cleanUrls) {
+      processedUrl = cleanUrlForCitation(originalUrl);
+    }
+
     // Priority 1: Replace with DOI if enabled and available
     if (settings.replaceUrlWithDoi && metadata.doi) {
       return metadata.doi.startsWith('http') ? metadata.doi : `https://doi.org/${metadata.doi}`;
@@ -2677,7 +2771,7 @@ function generateCitation(metadata, url, format, customTemplate) {
     
     // Priority 2: Replace with database name if enabled
     if (settings.replaceDatabaseUrls) {
-      const hostname = new URL(originalUrl).hostname;
+      const hostname = new URL(processedUrl).hostname;
       
       // Built-in database mappings
       const builtInDatabases = {
@@ -2736,9 +2830,9 @@ function generateCitation(metadata, url, format, customTemplate) {
         }
       }
     }
-    
-    // Return original URL if no replacements apply
-    return originalUrl;
+
+    // Return processed URL (cleaned of tracking parameters) if no replacements apply
+    return processedUrl;
   };
   
   // Prepare variables
@@ -2843,6 +2937,8 @@ function loadCitationSettings() {
         replaceUrlWithDoi: false,
         replaceDatabaseUrls: false,
         customDatabaseDomains: '',
+        autoCapitalize: false,
+        cleanUrls: false,
         ...result.citationSettings
       };
     }
@@ -2856,10 +2952,14 @@ function loadCitationSettings() {
     replaceDatabaseUrlsCheckbox.checked = citationSettings.replaceDatabaseUrls || false;
     customDatabaseDomainsInput.value = citationSettings.customDatabaseDomains || '';
     debugModeCheckbox.checked = citationSettings.debugMode || false;
+    autoCapitalizeCheckbox.checked = citationSettings.autoCapitalize || false;
+    cleanUrlsCheckbox.checked = citationSettings.cleanUrls || false;
 
-    // Load sidebar preference
-    if (preferSidePanelCheckbox) {
-      preferSidePanelCheckbox.checked = result.preferSidePanel ?? false;
+    // Load view mode preference (radio buttons)
+    const preferSidePanel = result.preferSidePanel ?? false;
+    if (viewModePopupRadio && viewModeSidebarRadio) {
+      viewModePopupRadio.checked = !preferSidePanel;
+      viewModeSidebarRadio.checked = preferSidePanel;
     }
 
     if (citationSettings.format === 'custom') {
@@ -2879,9 +2979,11 @@ function saveCitationSettings() {
   citationSettings.replaceDatabaseUrls = replaceDatabaseUrlsCheckbox.checked;
   citationSettings.customDatabaseDomains = customDatabaseDomainsInput.value;
   citationSettings.debugMode = debugModeCheckbox.checked;
+  citationSettings.autoCapitalize = autoCapitalizeCheckbox.checked;
+  citationSettings.cleanUrls = cleanUrlsCheckbox.checked;
 
-  // Save both citation settings and sidebar preference
-  const newPreferSidePanel = preferSidePanelCheckbox ? preferSidePanelCheckbox.checked : false;
+  // Save both citation settings and view mode preference (from radio buttons)
+  const newPreferSidePanel = viewModeSidebarRadio ? viewModeSidebarRadio.checked : false;
 
   chrome.storage.local.set({
     citationSettings: citationSettings,

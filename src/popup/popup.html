@@ -236,8 +236,34 @@
         <div class="modal-content">
           <span class="close-settings-modal">&times;</span>
           <h3>Settings</h3>
-          
+
           <div class="settings-section">
+            <h4 style="text-align: center;">Display Settings</h4>
+            <div class="form-group">
+              <div class="toggle-switch">
+                <input type="radio" name="view-mode" value="popup" id="view-mode-popup" checked>
+                <label for="view-mode-popup">Popup</label>
+                <input type="radio" name="view-mode" value="sidebar" id="view-mode-sidebar">
+                <label for="view-mode-sidebar">Sidebar</label>
+              </div>
+              <div class="setting-description">
+                Choose whether clicking the extension icon opens a popup or sidebar. (Requires Chrome 114+ for sidebar support)
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label for="citation-preview-enabled" style="cursor: pointer;">
+                Show citation preview on pages:
+                <input type="checkbox" id="citation-preview-enabled">
+              </label>
+              <div class="setting-description">
+                When checked, displays a floating citation preview in the bottom-right corner of web pages.
+              </div>
+            </div>
+          </div>
+
+          <div class="settings-section">
+            <h4 style="text-align: center;">Citation Settings</h4>
             <div class="form-group">
               <label for="citation-format">Select Citation Style:</label>
               <select id="citation-format">
@@ -249,17 +275,7 @@
                 <option value="custom">Custom Format</option>
               </select>
             </div>
-            
-            <div class="form-group">
-              <label for="citation-preview-enabled" style="cursor: pointer;">
-                Show citation preview on pages:
-                <input type="checkbox" id="citation-preview-enabled"> 
-              </label>
-              <div class="setting-description">
-                Displays a floating citation preview in the bottom-right corner of web pages
-              </div>
-            </div>
-            
+
             <div id="custom-format-section" class="form-group" style="display: none;">
               <label for="custom-format-template">Custom Citation Template:</label>
               <textarea id="custom-format-template" rows="4" style="width: 100%; box-sizing: border-box;" placeholder="{authorShort} {yearShort}, {quals}, &quot;{title},&quot; {journal}, {publicationInfo}, {pages}, {date}, {url}"></textarea>
@@ -287,15 +303,7 @@
                 <p><strong>Example:</strong> {authorShort} {yearShort}, {quals}, "{title}," {journal}, {publicationInfo}, {pages}, {date}, {url}</p>
               </div>
             </div>
-            
-            <div class="form-group">
-              <label for="excluded-domains">Excluded Domains:</label>
-              <textarea id="excluded-domains" rows="3" style="width: 100%; box-sizing: border-box;" placeholder="example.com, social-media.com, internal.company.com"></textarea>
-              <div class="setting-description">
-                Domains to exclude from research tracking (comma-separated). These pages won't be logged as visited content.
-              </div>
-            </div>
-            
+
             <div class="form-group">
               <label for="replace-url-with-doi" style="cursor: pointer;">
                 Replace URL with DOI in citations:
@@ -325,28 +333,37 @@
             </div>
 
             <div class="form-group">
-              <label for="debug-mode-enabled" style="cursor: pointer;">
-                Enable debug mode:
-                <input type="checkbox" id="debug-mode-enabled">
+              <label for="auto-capitalize-enabled" style="cursor: pointer;">
+                Auto-capitalize metadata:
+                <input type="checkbox" id="auto-capitalize-enabled">
               </label>
               <div class="setting-description">
-                When enabled, shows detailed debugging information in the browser console. Useful for troubleshooting issues.
+                When checked, text entered via keyboard shortcuts (Cmd/Ctrl+1-8) will be automatically formatted with appropriate title case capitalization for names, titles, and publication info. Manual edits in the metadata modal are not affected.
               </div>
             </div>
 
             <div class="form-group">
-              <label for="prefer-side-panel" style="cursor: pointer;">
-                Open in sidebar by default:
-                <input type="checkbox" id="prefer-side-panel">
+              <label for="clean-urls-enabled" style="cursor: pointer;">
+                Remove tracking parameters from URLs:
+                <input type="checkbox" id="clean-urls-enabled">
               </label>
               <div class="setting-description">
-                When enabled, clicking the extension icon opens it as a sidebar instead of a popup. (Requires Chrome 114+ for sidebar support)
+                When checked, removes tracking parameters (utm_*, fbclid, gclid, etc.) from URLs before saving to metadata. Preserves essential parameters needed for accessing content.
               </div>
             </div>
+
           </div>
 
           <div class="settings-section">
-            <h4>Metadata Management</h4>
+            <h4 style="text-align: center;">Tracker Settings</h4>
+            <div class="form-group">
+              <label for="excluded-domains">Excluded Domains:</label>
+              <textarea id="excluded-domains" rows="3" style="width: 100%; box-sizing: border-box;" placeholder="example.com, social-media.com, internal.company.com"></textarea>
+              <div class="setting-description">
+                Domains to exclude from research tracking (comma-separated). These pages won't be logged as visited content.
+              </div>
+            </div>
+
             <div class="form-group">
               <label>Export & Delete All Metadata:</label>
               <div style="display: flex; gap: 8px; margin-top: 8px;">
@@ -359,7 +376,21 @@
             </div>
           </div>
 
-          <div class="modal-buttons">
+          <div class="settings-section">
+            <h4 style="text-align: center;">Developer Settings</h4>
+            <div class="form-group">
+              <label for="debug-mode-enabled" style="cursor: pointer;">
+                Developer mode:
+                <input type="checkbox" id="debug-mode-enabled">
+              </label>
+              <div class="setting-description">
+                When checked, shows detailed debugging information in the browser console. Useful for troubleshooting issues.
+              </div>
+            </div>
+          </div>
+
+          <!-- Floating button bar at bottom -->
+          <div class="settings-floating-buttons">
             <button id="save-settings-btn" class="action-btn">Save Settings</button>
             <button id="cancel-settings-btn" class="action-btn secondary-btn">Cancel</button>
           </div>
@@ -445,7 +476,7 @@
     <div id="sidebar-citation-preview" class="section" style="display: none;">
       <div style="background: #f8f9fa; padding: 8px 12px; border-bottom: 1px solid #ddd; font-weight: bold; color: #495057; display: flex; justify-content: space-between; align-items: center;">
         <span>Citation Preview</span>
-        <button id="sidebar-citation-edit-btn" style="background: #007bff; border: none; color: white; cursor: pointer; font-size: 11px; padding: 4px 8px; border-radius: 3px; line-height: 1; font-weight: 500;">Edit</button>
+        <button id="sidebar-citation-edit-btn" style="background: #3498db; border: none; color: white; cursor: pointer; font-size: 11px; padding: 4px 8px; border-radius: 3px; line-height: 1; font-weight: 500;">Edit</button>
       </div>
       <div id="sidebar-citation-content" style="padding: 12px; color: #333; word-wrap: break-word; font-size: 12px; line-height: 1.4; background: white; border: 1px solid #ddd; border-top: none;">
         Loading citation...

@@ -907,9 +907,10 @@ body.sidebar-mode #sidebar-citation-preview {
   position: sticky;
   bottom: 0;
   margin-top: auto;
-  border-top: 2px solid #ddd;
+  border-top: 1px solid #ddd;
   background: white;
   z-index: 100;
+  box-shadow: none;
 }
 
 /* Make container use flexbox to push citation preview to bottom */
@@ -919,3 +920,70 @@ body.sidebar-mode .container {
   min-height: 100vh;
 }
 
+/* Toggle Switch Styles */
+.toggle-switch {
+  display: inline-flex;
+  background-color: #e0e0e0;
+  border-radius: 4px;
+  padding: 2px;
+  position: relative;
+}
+
+.toggle-switch input[type="radio"] {
+  display: none;
+}
+
+.toggle-switch label {
+  padding: 4px 12px;
+  cursor: pointer;
+  border-radius: 3px;
+  transition: all 0.2s ease;
+  font-weight: normal;
+  font-size: 12px;
+  color: #666;
+  margin: 0;
+  user-select: none;
+  position: relative;
+  z-index: 1;
+}
+
+.toggle-switch input[type="radio"]:checked + label {
+  background-color: #3498db;
+  color: white;
+}
+
+.toggle-switch label:hover {
+  color: #333;
+}
+
+.toggle-switch input[type="radio"]:checked + label:hover {
+  color: white;
+}
+
+/* Floating button bar for settings modal */
+.settings-floating-buttons {
+  position: sticky;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: white;
+  padding: 12px 20px;
+  margin: 8px 12px 12px 12px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  z-index: 1000;
+  opacity: 0.9;
+  transition: opacity 0.2s ease;
+}
+
+.settings-floating-buttons:hover {
+  opacity: 1;
+}
+
+.settings-floating-buttons button {
+  flex: 0 1 auto;
+  min-width: 120px;
+}

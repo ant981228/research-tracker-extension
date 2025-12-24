@@ -4651,6 +4651,86 @@ async function updateCurrentPageMetadata(field, value) {
   }
 }
 
+// Auto-capitalization function for metadata fields
+function autoCapitalizeText(text, field) {
+  if (!text || typeof text !== 'string') return text;
+
+  // Chicago Manual of Style title case rules (works well for academic citations)
+  const lowercaseWords = {
+    articles: ['a', 'an', 'the'],
+    conjunctions: ['and', 'but', 'for', 'nor', 'or'], // not 'yet' and 'so'
+    prepositions: [
+      // 4 letters or fewer (lowercase in Chicago)
+      'as', 'at', 'by', 'for', 'in', 'of', 'off', 'on', 'per', 'to', 'up', 'via',
+      'amid', 'atop', 'down', 'from', 'into', 'like', 'near', 'onto', 'over', 'past', 'till', 'upon', 'with'
+    ]
+  };
+
+  const allLowercase = [...lowercaseWords.articles, ...lowercaseWords.conjunctions, ...lowercaseWords.prepositions];
+
+  // Common acronyms to preserve
+  const commonAcronyms = [
+    'NASA', 'FBI', 'CIA', 'DNA', 'RNA', 'USA', 'UK', 'UN', 'EU', 'WHO',
+    'NATO', 'AIDS', 'HIV', 'PTSD', 'ADHD', 'COVID', 'API', 'HTTP', 'URL', 'AI', 'ML'
+  ];
+
+  function capitalizeWord(word) {
+    if (!word) return word;
+
+    // Check if it's an acronym
+    if (commonAcronyms.includes(word.toUpperCase()) && word.length <= 5) {
+      return word.toUpperCase();
+    }
+
+    // Handle hyphenated words
+    if (word.includes('-')) {
+      return word.split('-')
+        .map(part => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+        .join('-');
+    }
+
+    // Handle apostrophes (contractions, possessives)
+    if (word.includes("'")) {
+      return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+    }
+
+    return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+  }
+
+  // Split into words while preserving punctuation
+  const words = text.split(/\s+/);
+
+  const capitalizedWords = words.map((word, index) => {
+    const isFirst = index === 0;
+    const isLast = index === words.length - 1;
+
+    // Check if previous word ended with colon
+    const afterColon = index > 0 && words[index - 1].endsWith(':');
+
+    // Strip leading/trailing punctuation for checking
+    const cleanWord = word.replace(/^[^\w]+|[^\w]+$/g, '');
+    const leadingPunct = word.match(/^[^\w]+/)?.[0] || '';
+    const trailingPunct = word.match(/[^\w]+$/)?.[0] || '';
+
+    if (!cleanWord) return word;
+
+    // Always capitalize first word, last word, or word after colon
+    if (isFirst || isLast || afterColon) {
+      return leadingPunct + capitalizeWord(cleanWord) + trailingPunct;
+    }
+
+    // Check if it should be lowercase
+    if (allLowercase.includes(cleanWord.toLowerCase())) {
+      return leadingPunct + cleanWord.toLowerCase() + trailingPunct;
+    }
+
+    // Default: capitalize
+    return leadingPunct + capitalizeWord(cleanWord) + trailingPunct;
+  });
+
+  return capitalizedWords.join(' ');
+}
+
 // Keyboard shortcut handler
 document.addEventListener('keydown', async (e) => {
   // Detect operating system for modifier key
@@ -4810,10 +4890,33 @@ document.addEventListener('keydown', async (e) => {
         // Unknown shortcut
         return;
     }
-    
+
+    // Apply auto-capitalization if enabled (only for cases 1-7, not case 0)
+    // Check if auto-capitalization is enabled
+    try {
+      const settings = await new Promise((resolve) => {
+        chrome.storage.local.get(['citationSettings'], resolve);
+      });
+
+      if (settings.citationSettings?.autoCapitalize) {
+        // Apply capitalization to appropriate fields
+        const fieldsToCapitalize = ['author', 'title', 'journal', 'publicationInfo'];
+
+        if (fieldsToCapitalize.includes(field)) {
+          const capitalizedValue = autoCapitalizeText(parsedValue, field);
+          if (capitalizedValue !== parsedValue) {
+            debugLog(`Auto-capitalized ${field}:`, parsedValue, '->', capitalizedValue);
+            parsedValue = capitalizedValue;
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Error checking auto-capitalize setting:', error);
+    }
+
     // Update metadata (only for cases 1-7, not case 0)
     await updateCurrentPageMetadata(field, parsedValue);
-    
+
     // Show success toast
     const fieldName = field.charAt(0).toUpperCase() + field.slice(1).replace(/([A-Z])/g, ' $1');
     showToast(`${fieldName} updated: ${parsedValue}`);
@@ -5004,7 +5107,7 @@ async function createCitationPreview() {
     <span>Citation Preview</span>
     <div style="display: flex; gap: 8px; align-items: center;">
       <button id="citation-preview-edit" style="
-        background: #007bff;
+        background: #3498db;
         border: none;
         color: white;
         cursor: pointer;
@@ -5396,11 +5499,18 @@ function generateCitationPreview(metadata, url, title, settings) {
 chrome.storage.local.get(['citationSettings'], (result) => {
   const settings = result.citationSettings || { format: 'apa', customTemplate: '', previewEnabled: false };
   citationPreviewEnabled = settings.previewEnabled;
-  
+
   if (citationPreviewEnabled) {
     // Wait a bit for page to load
     setTimeout(() => {
-      createCitationPreview();
+      // Check if sidebar is currently open before showing page overlay
+      chrome.runtime.sendMessage({ action: 'isSidebarOpen' }, (response) => {
+        if (response && response.isSidebarOpen) {
+          debugLog('Research Tracker: Sidebar is open, skipping page overlay citation preview');
+        } else {
+          createCitationPreview();
+        }
+      });
     }, 1000);
   }
 });
