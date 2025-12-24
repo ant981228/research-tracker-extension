@@ -3550,6 +3550,9 @@ async function closePopoutWindow() {
 // SIDEBAR/POPUP MODE HANDLING
 // ============================================================================
 
+// Track which windows have sidebar open
+const sidebarOpenWindows = new Set();
+
 // Function to update popup behavior based on user preference
 async function updatePopupBehavior() {
   const result = await chrome.storage.local.get(['preferSidePanel']);
@@ -3562,6 +3565,16 @@ async function updatePopupBehavior() {
     // Enable default popup (native browser action popup)
     await chrome.action.setPopup({ popup: 'src/popup/popup.html' });
   }
+}
+
+// Function to check if sidebar is open in current window and disable popup if so
+async function checkAndDisablePopupIfSidebarOpen(windowId) {
+  if (sidebarOpenWindows.has(windowId)) {
+    // Sidebar is open, temporarily disable popup
+    await chrome.action.setPopup({ popup: '' });
+    return true;
+  }
+  return false;
 }
 
 // Update popup behavior on startup
@@ -3578,8 +3591,9 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
 chrome.action.onClicked.addListener(async (tab) => {
   try {
     if (chrome.sidePanel) {
-      // Open as sidebar
+      // Open as sidebar and track it
       await chrome.sidePanel.open({ windowId: tab.windowId });
+      sidebarOpenWindows.add(tab.windowId);
     }
   } catch (error) {
     console.error('Error opening sidebar:', error);
@@ -3604,8 +3618,18 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   try {
     if (info.menuItemId === 'openSidePanel' && chrome.sidePanel) {
       await chrome.sidePanel.open({ windowId: tab.windowId });
+      sidebarOpenWindows.add(tab.windowId);
+      // Disable popup for this window
+      await chrome.action.setPopup({ popup: '' });
     }
   } catch (error) {
     console.error('Error opening extension from context menu:', error);
   }
+});
+
+// Listen for window closures to clean up tracking
+chrome.windows.onRemoved.addListener((windowId) => {
+  sidebarOpenWindows.delete(windowId);
+  // Re-evaluate popup behavior
+  updatePopupBehavior();
 });
