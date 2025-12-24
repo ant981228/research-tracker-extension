@@ -221,6 +221,20 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       }
       sendResponse({ success: true });
       break;
+
+    case 'hideCitationPreview':
+      // Hide page overlay citation preview (when sidebar opens)
+      removeCitationPreview();
+      sendResponse({ success: true });
+      break;
+
+    case 'showCitationPreview':
+      // Show page overlay citation preview (when sidebar closes)
+      if (citationPreviewEnabled) {
+        createCitationPreview();
+      }
+      sendResponse({ success: true });
+      break;
   }
   
   return true; // Keep the message channel open for async responses

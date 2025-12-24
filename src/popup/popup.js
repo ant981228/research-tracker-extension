@@ -99,6 +99,11 @@ let viewAllSessionsBtn;
 let allSessionsLoading;
 let allSessionsList;
 
+// Sidebar Citation Preview Elements
+let sidebarCitationPreview;
+let sidebarCitationContent;
+let sidebarCitationEditBtn;
+
 // Current session state
 let selectedPageUrl = null;
 let addNoteInProgress = false;
@@ -253,7 +258,8 @@ function init() {
   // Detect if we're in sidebar mode and add class for responsive styling
   // In sidebar, the window width will typically be wider than a popup
   // or the URL will contain certain indicators
-  if (window.innerWidth > 500 || window.innerWidth < 380) {
+  const isSidebarMode = window.innerWidth > 500 || window.innerWidth < 380;
+  if (isSidebarMode) {
     // Likely in sidebar mode (either wide or narrow sidebar)
     document.body.classList.add('sidebar-mode');
   }
@@ -351,6 +357,11 @@ function init() {
   viewAllSessionsBtn = document.getElementById('view-all-sessions-btn');
   allSessionsLoading = document.getElementById('all-sessions-loading');
   allSessionsList = document.getElementById('all-sessions-list');
+
+  // Initialize sidebar citation preview elements
+  sidebarCitationPreview = document.getElementById('sidebar-citation-preview');
+  sidebarCitationContent = document.getElementById('sidebar-citation-content');
+  sidebarCitationEditBtn = document.getElementById('sidebar-citation-edit-btn');
   
   // Action buttons
   viewPagesBtn = document.getElementById('view-pages-btn');
@@ -562,11 +573,102 @@ function init() {
       // The new default will open automatically when user clicks icon again
     }
   });
+
+  // Setup sidebar citation preview
+  if (isSidebarMode) {
+    // Show sidebar citation preview
+    if (sidebarCitationPreview) {
+      sidebarCitationPreview.style.display = 'block';
+    }
+
+    // Setup edit button handler
+    if (sidebarCitationEditBtn) {
+      sidebarCitationEditBtn.addEventListener('click', () => {
+        if (currentUrl) {
+          openMetadataModal(currentUrl);
+        }
+      });
+    }
+
+    // Tell content script to hide page overlay citation preview
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      if (tabs.length > 0) {
+        chrome.tabs.sendMessage(tabs[0].id, {
+          action: 'hideCitationPreview'
+        }).catch(() => {
+          // Ignore errors if content script not loaded
+        });
+      }
+    });
+
+    // Start updating sidebar citation preview
+    updateSidebarCitationPreview();
+    // Update every 2 seconds while in sidebar mode
+    setInterval(updateSidebarCitationPreview, 2000);
+  }
+
+  // Listen for window close to restore page overlay citation preview
+  window.addEventListener('beforeunload', () => {
+    if (isSidebarMode) {
+      // Tell content script to show page overlay citation preview again
+      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        if (tabs.length > 0) {
+          chrome.tabs.sendMessage(tabs[0].id, {
+            action: 'showCitationPreview'
+          }).catch(() => {
+            // Ignore errors
+          });
+        }
+      });
+    }
+  });
+}
+
+// Function to update sidebar citation preview
+async function updateSidebarCitationPreview() {
+  if (!sidebarCitationContent || !currentUrl) {
+    return;
+  }
+
+  try {
+    // Get citation settings
+    const result = await chrome.storage.local.get(['citationSettings']);
+    const settings = result.citationSettings || {};
+
+    // Check if preview is enabled
+    if (!settings.previewEnabled) {
+      if (sidebarCitationPreview) {
+        sidebarCitationPreview.style.display = 'none';
+      }
+      return;
+    } else {
+      if (sidebarCitationPreview) {
+        sidebarCitationPreview.style.display = 'block';
+      }
+    }
+
+    // Get metadata for current URL
+    const metadataResponse = await chrome.runtime.sendMessage({
+      action: 'getPageMetadata',
+      url: currentUrl
+    });
+
+    if (metadataResponse && metadataResponse.metadata) {
+      // Generate citation
+      const citation = await generateCitation(metadataResponse.metadata, settings.format, settings.customTemplate);
+      sidebarCitationContent.textContent = citation;
+    } else {
+      sidebarCitationContent.textContent = 'No citation available for this page.';
+    }
+  } catch (error) {
+    console.error('Error updating sidebar citation preview:', error);
+    sidebarCitationContent.textContent = 'Error loading citation.';
+  }
 }
 
 // Function to update activity status in the background
 function updateActivityStatus() {
-  chrome.runtime.sendMessage({ 
+  chrome.runtime.sendMessage({
     action: 'checkActivity'
   });
 }
