@@ -3550,34 +3550,39 @@ async function closePopoutWindow() {
 // SIDEBAR/POPUP MODE HANDLING
 // ============================================================================
 
-// Handle extension icon clicks
+// Function to update popup behavior based on user preference
+async function updatePopupBehavior() {
+  const result = await chrome.storage.local.get(['preferSidePanel']);
+  const useSidePanel = result.preferSidePanel ?? false;
+
+  if (useSidePanel && chrome.sidePanel) {
+    // Disable default popup so onClicked can fire
+    await chrome.action.setPopup({ popup: '' });
+  } else {
+    // Enable default popup (native browser action popup)
+    await chrome.action.setPopup({ popup: 'src/popup/popup.html' });
+  }
+}
+
+// Update popup behavior on startup
+updatePopupBehavior();
+
+// Listen for storage changes to update popup behavior when user changes preference
+chrome.storage.onChanged.addListener((changes, areaName) => {
+  if (areaName === 'local' && changes.preferSidePanel) {
+    updatePopupBehavior();
+  }
+});
+
+// Handle extension icon clicks (only fires when popup is disabled)
 chrome.action.onClicked.addListener(async (tab) => {
   try {
-    // Get user preference for default mode
-    const result = await chrome.storage.local.get(['preferSidePanel']);
-    const useSidePanel = result.preferSidePanel ?? false; // Default to popup
-
-    if (useSidePanel && chrome.sidePanel) {
+    if (chrome.sidePanel) {
       // Open as sidebar
       await chrome.sidePanel.open({ windowId: tab.windowId });
-    } else {
-      // Open as popup window
-      await chrome.windows.create({
-        url: chrome.runtime.getURL('src/popup/popup.html'),
-        type: 'popup',
-        width: 400,
-        height: 600
-      });
     }
   } catch (error) {
-    console.error('Error opening extension:', error);
-    // Fallback to popup on error
-    chrome.windows.create({
-      url: chrome.runtime.getURL('src/popup/popup.html'),
-      type: 'popup',
-      width: 400,
-      height: 600
-    });
+    console.error('Error opening sidebar:', error);
   }
 });
 
@@ -3591,13 +3596,6 @@ chrome.runtime.onInstalled.addListener(() => {
       title: 'Open in sidebar',
       contexts: ['action']
     });
-
-    // Add "Open in popup" option
-    chrome.contextMenus.create({
-      id: 'openPopup',
-      title: 'Open in popup',
-      contexts: ['action']
-    });
   });
 });
 
@@ -3606,13 +3604,6 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   try {
     if (info.menuItemId === 'openSidePanel' && chrome.sidePanel) {
       await chrome.sidePanel.open({ windowId: tab.windowId });
-    } else if (info.menuItemId === 'openPopup') {
-      await chrome.windows.create({
-        url: chrome.runtime.getURL('src/popup/popup.html'),
-        type: 'popup',
-        width: 400,
-        height: 600
-      });
     }
   } catch (error) {
     console.error('Error opening extension from context menu:', error);

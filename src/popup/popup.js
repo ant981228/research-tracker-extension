@@ -522,6 +522,29 @@ function init() {
   
   // Check if we were asked to open metadata modal for a specific URL
   checkForPendingEditRequest();
+
+  // Listen for tab updates (navigation) to refresh UI in sidebar mode
+  chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+    // Only respond to completed navigations
+    if (changeInfo.status === 'complete') {
+      // Get current active tab to see if this update is for the active tab
+      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        if (tabs.length > 0 && tabs[0].id === tabId) {
+          // Active tab navigated - refresh the UI
+          debugLog('Tab navigation detected, refreshing UI...');
+          getCurrentTabUrl();
+          refreshStatus();
+        }
+      });
+    }
+  });
+
+  // Listen for active tab changes
+  chrome.tabs.onActivated.addListener((activeInfo) => {
+    debugLog('Active tab changed, refreshing UI...');
+    getCurrentTabUrl();
+    refreshStatus();
+  });
 }
 
 // Function to update activity status in the background
