@@ -34,6 +34,12 @@ body {
   overflow-y: auto;
 }
 
+/* Sidebar mode: make width responsive */
+body.sidebar-mode {
+  width: 100%;
+  min-width: 320px; /* Minimum for very narrow sidebars */
+}
+
 .container {
   padding: 16px;
 }

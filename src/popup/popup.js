@@ -250,6 +250,14 @@ function hideCurrentModal() {
 }
 
 function init() {
+  // Detect if we're in sidebar mode and add class for responsive styling
+  // In sidebar, the window width will typically be wider than a popup
+  // or the URL will contain certain indicators
+  if (window.innerWidth > 500 || window.innerWidth < 380) {
+    // Likely in sidebar mode (either wide or narrow sidebar)
+    document.body.classList.add('sidebar-mode');
+  }
+
   // Initialize UI elements
   startBtn = document.getElementById('start-btn');
   pauseBtn = document.getElementById('pause-btn');
