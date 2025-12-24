@@ -249,7 +249,23 @@ function hideCurrentModal() {
   debugLog('Modal stack after hiding:', modalStack);
 }
 
-function init() {
+async function init() {
+  // Check if sidebar is already open - if so, close this popup
+  try {
+    const currentWindow = await chrome.windows.getCurrent();
+    const sidebarOpenKey = `sidebarOpen_${currentWindow.id}`;
+    const result = await chrome.storage.local.get([sidebarOpenKey]);
+
+    if (result[sidebarOpenKey] === true) {
+      // Sidebar is open, close this popup immediately
+      window.close();
+      return;
+    }
+  } catch (error) {
+    // If check fails, continue opening popup
+    console.log('Could not check sidebar status:', error);
+  }
+
   // Detect if we're in sidebar mode and add class for responsive styling
   // In sidebar, the window width will typically be wider than a popup
   // or the URL will contain certain indicators

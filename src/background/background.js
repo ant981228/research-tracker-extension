@@ -3567,16 +3567,6 @@ async function updatePopupBehavior() {
   }
 }
 
-// Function to check if sidebar is open in current window and disable popup if so
-async function checkAndDisablePopupIfSidebarOpen(windowId) {
-  if (sidebarOpenWindows.has(windowId)) {
-    // Sidebar is open, temporarily disable popup
-    await chrome.action.setPopup({ popup: '' });
-    return true;
-  }
-  return false;
-}
-
 // Update popup behavior on startup
 updatePopupBehavior();
 
@@ -3619,8 +3609,8 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     if (info.menuItemId === 'openSidePanel' && chrome.sidePanel) {
       await chrome.sidePanel.open({ windowId: tab.windowId });
       sidebarOpenWindows.add(tab.windowId);
-      // Disable popup for this window
-      await chrome.action.setPopup({ popup: '' });
+      // Store that sidebar is open for this window
+      await chrome.storage.local.set({ [`sidebarOpen_${tab.windowId}`]: true });
     }
   } catch (error) {
     console.error('Error opening extension from context menu:', error);
@@ -3630,6 +3620,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 // Listen for window closures to clean up tracking
 chrome.windows.onRemoved.addListener((windowId) => {
   sidebarOpenWindows.delete(windowId);
+  chrome.storage.local.remove([`sidebarOpen_${windowId}`]);
   // Re-evaluate popup behavior
   updatePopupBehavior();
 });
