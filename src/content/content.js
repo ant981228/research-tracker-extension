@@ -5128,6 +5128,28 @@ async function createCitationPreview() {
   header.innerHTML = `
     <span>Citation Preview</span>
     <div style="display: flex; gap: 8px; align-items: center;">
+      <button id="citation-preview-copy" style="
+        background: #27ae60;
+        border: none;
+        color: white;
+        cursor: pointer;
+        font-size: 11px;
+        padding: 4px 8px;
+        border-radius: 3px;
+        line-height: 1;
+        font-weight: 500;
+      ">Copy cite</button>
+      <button id="citation-preview-copy-article" style="
+        background: #27ae60;
+        border: none;
+        color: white;
+        cursor: pointer;
+        font-size: 11px;
+        padding: 4px 8px;
+        border-radius: 3px;
+        line-height: 1;
+        font-weight: 500;
+      ">Copy article</button>
       <button id="citation-preview-edit" style="
         background: #3498db;
         border: none;
@@ -5170,6 +5192,18 @@ async function createCitationPreview() {
     removeCitationPreview();
   });
   
+  // Copy buttons: same flows as Ctrl+Q / Ctrl+Alt+Q, minus the F8
+  // trailer — a hand-copied cite may be pasted anywhere, so it must
+  // stay clean text. (Fast Debate Paste uses the keystrokes, which
+  // carry the trailer.)
+  header.querySelector('#citation-preview-copy').addEventListener('click', () => {
+    sendCopyCitation({});
+  });
+  header.querySelector('#citation-preview-copy-article').addEventListener('click', () => {
+    showToast('Extracting article…', 'info');
+    sendCopyCitation({ withArticle: true });
+  });
+
   // Add edit button handler
   header.querySelector('#citation-preview-edit').addEventListener('click', () => {
     // Send message to open popup and metadata modal
