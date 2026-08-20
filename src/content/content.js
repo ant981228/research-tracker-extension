@@ -5487,7 +5487,7 @@ function generateCitationPreview(metadata, url, title, settings) {
   citation = citation.replace(/\s+([.,])/g, '$1');
   
   // Clean up multiple commas and empty sections
-  citation = citation.replace(/,\s*,/g, ','); // Remove double commas
+  citation = citation.replace(/,(\s*,)+/g, ','); // Collapse comma runs (any number of adjacent empty fields)
   citation = citation.replace(/,\s*\./g, '.'); // Remove comma before period
   citation = citation.replace(/,\s*$/, ''); // Remove trailing comma
   citation = citation.replace(/\.\s*,/g, '.'); // Remove comma after period
