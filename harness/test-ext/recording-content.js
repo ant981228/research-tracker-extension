@@ -24,7 +24,34 @@
     'h3.gs_rt a', // Google Scholar
   ];
 
-  function collectResults() {
+  function collectResults(engine) {
+    // Prefer the extension's per-engine extractor (content.js loads
+    // first in the same isolated world and defines SEARCH_EXTRACTORS);
+    // its selectors are maintained per site. Fall back to the generic
+    // selector sweep for engines without one (and the test harness).
+    try {
+      if (
+        engine &&
+        typeof SEARCH_EXTRACTORS !== 'undefined' &&
+        typeof SEARCH_EXTRACTORS[engine] === 'function'
+      ) {
+        var extracted = SEARCH_EXTRACTORS[engine]() || [];
+        var mapped = extracted
+          .filter(function (r) {
+            return r && r.url && /^https?:/.test(r.url);
+          })
+          .map(function (r, i) {
+            return {
+              url: r.url,
+              title: (r.title || '').slice(0, 300),
+              rank: r.position || i + 1,
+            };
+          });
+        if (mapped.length > 0) return mapped;
+      }
+    } catch (e) {
+      /* extractor blew up on this page — fall through to selectors */
+    }
     var seen = {};
     var results = [];
     SELECTORS.forEach(function (sel) {
@@ -43,7 +70,6 @@
           url: a.href,
           title: (node.textContent || '').trim().slice(0, 300),
           rank: results.length + 1,
-          el: a,
         });
       });
     });
@@ -67,9 +93,9 @@
     });
   }
 
-  function arm() {
+  function arm(engine) {
     if (armed) return;
-    var results = collectResults();
+    var results = collectResults(engine);
     if (results.length === 0) {
       return; // retry on next request — the SERP may still be rendering
     }
@@ -84,7 +110,7 @@
 
     byHref = {};
     results.forEach(function (r) {
-      byHref[r.el.href] = r;
+      byHref[r.url] = r;
     });
 
     // Document-level listeners are registered ONCE — a bfcache restore
@@ -98,9 +124,11 @@
     }
   }
 
+  var lastEngine = null;
   chrome.runtime.onMessage.addListener(function (message, _sender, sendResponse) {
     if (message && message.rt2 === 'armSerp') {
-      arm();
+      lastEngine = message.engine || lastEngine;
+      arm(lastEngine);
       sendResponse({ ok: true, armed: armed });
     }
     return false;
@@ -113,7 +141,7 @@
   window.addEventListener('pageshow', function (e) {
     if (e.persisted && armed) {
       armed = false;
-      arm();
+      arm(lastEngine);
     }
   });
 })();

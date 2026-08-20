@@ -31,38 +31,68 @@ var RT2_KEYS = {
   ENGINES: 'rt2_engines', // storage.local: extra engine configs (tests)
 };
 
+// Mirrors v1's SEARCH_ENGINES incl. proxy tolerance (EZproxy et al.
+// mangle hostnames, so hosts also match when the punctuation-stripped
+// hostname CONTAINS the stripped domain) and the per-engine path rules.
 var RT2_BUILTIN_ENGINES = [
-  { engine: 'GOOGLE', hosts: ['google.com', 'www.google.com'], queryParam: 'q', pathPrefixes: ['/search'] },
-  { engine: 'GOOGLE_SCHOLAR', hosts: ['scholar.google.com'], queryParam: 'q' },
-  { engine: 'GOOGLE_NEWS', hosts: ['news.google.com'], queryParam: 'q' },
-  { engine: 'BING', hosts: ['bing.com', 'www.bing.com'], queryParam: 'q', pathPrefixes: ['/search'] },
-  { engine: 'DUCKDUCKGO', hosts: ['duckduckgo.com'], queryParam: 'q' },
+  { engine: 'GOOGLE_SCHOLAR', hosts: ['scholar.google.com'], queryParam: 'q', proxied: true },
+  { engine: 'GOOGLE_NEWS', hosts: ['news.google.com'], queryParam: 'q', proxied: true },
+  { engine: 'GOOGLE', hosts: ['google.com', 'www.google.com'], queryParam: 'q', proxied: true,
+    pathPrefixes: ['/search', '/webhp'] },
+  { engine: 'BING', hosts: ['bing.com', 'www.bing.com'], queryParam: 'q', proxied: true,
+    pathPrefixes: ['/search'] },
+  { engine: 'DUCKDUCKGO', hosts: ['duckduckgo.com'], queryParam: 'q', proxied: true },
+  { engine: 'LEXIS',
+    hosts: ['advance.lexis.com', 'www.lexis.com', 'lexisnexis.com', 'www.lexisnexis.com'],
+    queryParam: 'pdsearchterms', proxied: true, pathIncludes: '/search/',
+    decodeQuery: true },
 ];
 
 // ── serialized dispatch ─────────────────────────────────────────────
 
 var rt2Chain = Promise.resolve();
 
+/** Append records to the persistent log (single writer — call only
+ *  from inside the dispatch chain, or for out-of-band records like
+ *  notes that never touch engine state). Notifies rt2RecordHook so
+ *  the host (background.js) can maintain side stores (metadata). */
+async function rt2AppendRecords(records) {
+  if (!records || records.length === 0) return;
+  var seqBox = await chrome.storage.local.get([RT2_KEYS.LOG_SEQ]);
+  var seq = seqBox[RT2_KEYS.LOG_SEQ] || 0;
+  var writes = {};
+  records.forEach(function (r) {
+    writes[RT2_KEYS.LOG_PREFIX + seq] = r;
+    seq += 1;
+  });
+  writes[RT2_KEYS.LOG_SEQ] = seq;
+  await chrome.storage.local.set(writes);
+  try {
+    if (typeof self !== 'undefined' && typeof self.rt2RecordHook === 'function') {
+      self.rt2RecordHook(records);
+    }
+  } catch (e) {
+    console.error('rt2RecordHook error:', e);
+  }
+}
+
 function rt2Dispatch(makeInput) {
   rt2Chain = rt2Chain
     .then(async function () {
-      var gate = await chrome.storage.session.get([RT2_KEYS.RECORDING, RT2_KEYS.STATE]);
+      var gate = await chrome.storage.session.get([
+        RT2_KEYS.RECORDING,
+        RT2_KEYS.STATE,
+        'rt2_paused',
+      ]);
       if (!gate[RT2_KEYS.RECORDING]) return;
       var input = typeof makeInput === 'function' ? await makeInput() : makeInput;
       if (!input) return;
+      // Paused: drop event collection but keep the session alive
+      // (stop still passes so the end marker lands).
+      if (gate['rt2_paused'] && input.kind !== 'stop') return;
       var state = gate[RT2_KEYS.STATE] || emptyRecordingState();
       var out = reduceRecording(state, input);
-      var writes = {};
-      if (out.records.length > 0) {
-        var seqBox = await chrome.storage.local.get([RT2_KEYS.LOG_SEQ]);
-        var seq = seqBox[RT2_KEYS.LOG_SEQ] || 0;
-        out.records.forEach(function (r) {
-          writes[RT2_KEYS.LOG_PREFIX + seq] = r;
-          seq += 1;
-        });
-        writes[RT2_KEYS.LOG_SEQ] = seq;
-        await chrome.storage.local.set(writes);
-      }
+      await rt2AppendRecords(out.records);
       await chrome.storage.session.set(
         (function () {
           var o = {};
@@ -90,21 +120,38 @@ chrome.storage.onChanged.addListener(function (changes, area) {
   if (area === 'local' && changes[RT2_KEYS.ENGINES]) rt2EngineCache = null;
 });
 
+function rt2HostMatches(url, cfg) {
+  var direct = cfg.hosts.some(function (h) {
+    return url.hostname === h || url.host === h;
+  });
+  if (direct) return true;
+  if (!cfg.proxied) return false;
+  var norm = url.hostname.replace(/[-_.]/g, '').toLowerCase();
+  return cfg.hosts.some(function (h) {
+    return norm.indexOf(h.replace(/[-_.]/g, '').toLowerCase()) >= 0;
+  });
+}
+
 async function rt2DetectSearch(urlString) {
   try {
     var url = new URL(urlString);
     var engines = await rt2Engines();
     for (var i = 0; i < engines.length; i++) {
       var cfg = engines[i];
-      var hostMatch = cfg.hosts.some(function (h) {
-        return url.hostname === h || (url.hostname + ':' + url.port) === h || url.host === h;
-      });
-      if (!hostMatch) continue;
+      if (!rt2HostMatches(url, cfg)) continue;
       if (cfg.pathPrefixes && !cfg.pathPrefixes.some(function (p) { return url.pathname.indexOf(p) === 0; })) {
         continue;
       }
+      if (cfg.pathIncludes && url.pathname.indexOf(cfg.pathIncludes) < 0) continue;
       var q = url.searchParams.get(cfg.queryParam);
       if (!q) continue;
+      if (cfg.decodeQuery) {
+        try {
+          q = decodeURIComponent(q);
+        } catch (e) {
+          /* keep raw */
+        }
+      }
       var params = {};
       url.searchParams.forEach(function (v, k) {
         params[k] = v;
@@ -154,12 +201,12 @@ chrome.webNavigation.onCompleted.addListener(function (details) {
     chrome.storage.session.get([RT2_KEYS.RECORDING]).then(function (g) {
       if (!g[RT2_KEYS.RECORDING]) return;
       var ping = function () {
-        chrome.tabs.sendMessage(details.tabId, { rt2: 'armSerp' }).then(function (res) {
+        chrome.tabs.sendMessage(details.tabId, { rt2: 'armSerp', engine: search.engine }).then(function (res) {
           if (!res || !res.armed) setTimeout(ping2, 800);
         }).catch(function () { setTimeout(ping2, 800); });
       };
       var ping2 = function () {
-        chrome.tabs.sendMessage(details.tabId, { rt2: 'armSerp' }).catch(function () {});
+        chrome.tabs.sendMessage(details.tabId, { rt2: 'armSerp', engine: search.engine }).catch(function () {});
       };
       ping();
     });

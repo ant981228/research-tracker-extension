@@ -23,8 +23,13 @@
   },
   "content_scripts": [
     {
-      "matches": ["<all_urls>"],
-      "js": ["src/content/content.js"]
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "src/content/content.js",
+        "src/content/recording-content.js"
+      ]
     }
   ],
   "action": {

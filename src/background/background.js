@@ -1,5 +1,10 @@
 // Import IndexedDB module
 importScripts('./indexeddb.js');
+// Recording layer v2 — causality-based session recorder (engine =
+// pure state machine, adapter = MV3-safe chrome wiring, compat = the
+// legacy message vocabulary implemented on the new log, selftest =
+// per-browser signal verification).
+importScripts('./recording/engine.js', './recording/adapter.js', './recording/compat.js', './recording/selftest.js');
 
 // Debug logging helper - checks settings for debug mode
 function debugLog(...args) {
@@ -123,7 +128,100 @@ const ALARM_NAMES = {
 
 // State management
 let isRecording = false;
-let currentSession = null;
+let currentSession = null; // legacy shell — v2 keeps session state in storage
+// Mirrors of the v2 recorder's storage.session flags, refreshed at
+// boot and on every change so the many synchronous isRecording reads
+// (badge, citation gating, activity) keep working.
+let rt2PausedMirror = false;
+async function rt2RefreshMirrors() {
+  try {
+    const g = await chrome.storage.session.get(['rt2_recording', 'rt2_paused']);
+    isRecording = !!g['rt2_recording'];
+    rt2PausedMirror = !!g['rt2_paused'];
+  } catch (e) {
+    console.error('rt2RefreshMirrors failed:', e);
+  }
+}
+chrome.storage.session.onChanged.addListener((changes) => {
+  if ('rt2_recording' in changes) isRecording = !!changes['rt2_recording'].newValue;
+  if ('rt2_paused' in changes) rt2PausedMirror = !!changes['rt2_paused'].newValue;
+  if ('rt2_recording' in changes || 'rt2_paused' in changes) updateBadge();
+});
+
+// Metadata linkage for v2 records: every logged visit gets (or joins)
+// its metadata object, stamped with this session + the search that led
+// there — same linkage logPageVisit used to perform.
+const rt2SearchInfoCache = {};
+self.rt2RecordHook = (records) => {
+  records.forEach((r) => {
+    if (r.t === 'search' && r.id != null) {
+      rt2SearchInfoCache[r.id] = {
+        engine: r.engine,
+        query: r.query,
+        url: r.url,
+        timestamp: new Date(r.ts).toISOString(),
+      };
+    }
+  });
+  (async () => {
+    for (const r of records) {
+      if (r.t !== 'visit') continue;
+      try {
+        updateActivityTimestamp();
+        const { id: metadataId } = await getOrCreateMetadataObject(r.url);
+        const meta = (await chrome.storage.local.get(['rt2_meta']))['rt2_meta'];
+        const sessionData = { timestamp: new Date(r.ts).toISOString() };
+        const att = r.attribution || {};
+        if (att.searchId != null) {
+          let info = rt2SearchInfoCache[att.searchId];
+          if (!info) {
+            // Cache miss (hook state died with the worker) — rebuild once.
+            const log = await rt2ReadLog();
+            log.forEach((rec) => {
+              if (rec.t === 'search' && rec.id != null) {
+                rt2SearchInfoCache[rec.id] = {
+                  engine: rec.engine,
+                  query: rec.query,
+                  url: rec.url,
+                  timestamp: new Date(rec.ts).toISOString(),
+                };
+              }
+            });
+            info = rt2SearchInfoCache[att.searchId];
+          }
+          if (info) sessionData.searchContext = info;
+        }
+        if (meta) await addSessionDataToMetadataObject(metadataId, meta.id, sessionData);
+      } catch (e) {
+        console.error('rt2RecordHook metadata linkage failed:', e);
+      }
+    }
+  })();
+};
+
+// Metadata extraction on completed navigations (ported from the old
+// handleNavigationCompleted): recording-gated, skips SERPs and
+// excluded pages, extracts once per URL unless manually edited.
+chrome.webNavigation.onCompleted.addListener((details) => {
+  if (details.frameId !== 0) return;
+  if (!/^https?:/.test(details.url)) return;
+  (async () => {
+    const g = await chrome.storage.session.get(['rt2_recording', 'rt2_paused']);
+    if (!g['rt2_recording'] || g['rt2_paused']) return;
+    if (await rt2DetectSearch(details.url)) return;
+    const isExcludedPage = await isExcludedFromLoggingAsync(details.url);
+    if (isExcludedPage) return;
+    const { id: metadataId, metadataObj } = await getOrCreateMetadataObject(details.url);
+    if (Object.keys(metadataObj.metadata).length > 0 || metadataObj.metadata.manuallyEdited) {
+      return;
+    }
+    chrome.tabs.sendMessage(details.tabId, { action: 'extractMetadata' }, async (response) => {
+      if (chrome.runtime.lastError || !response) return;
+      const finalMetadata = await processMetadataWithDOIPriority(details.url, response.metadata);
+      await updatePageVisitMetadata(details.url, finalMetadata);
+    });
+  })().catch((e) => console.error('metadata extraction failed:', e));
+});
 let autosaveInterval = null;
 let activityMonitorInterval = null;
 
@@ -351,10 +449,9 @@ chrome.alarms.onAlarm.addListener((alarm) => {
     // This alarm just keeps the service worker alive, no action needed
     updateActivityTimestamp();
   } else if (alarm.name === ALARM_NAMES.AUTOSAVE) {
-    if (isRecording && currentSession) {
-      saveCurrentSession();
-    } else {
-      // If we're not recording anymore, clear the alarm
+    // v2 appends every event as it happens — the alarm only serves as
+    // a wake pulse; clear it when no longer recording.
+    if (!isRecording) {
       chrome.alarms.clear(ALARM_NAMES.AUTOSAVE);
       chrome.alarms.clear(ALARM_NAMES.KEEP_ALIVE);
     }
@@ -367,10 +464,11 @@ chrome.alarms.onAlarm.addListener((alarm) => {
   }
 });
 
-// Check for interrupted sessions on browser startup
+// Refresh recorder mirrors on browser startup (the v2 recorder
+// self-recovers: its state lives in storage, its listeners are static).
 chrome.runtime.onStartup.addListener(async () => {
   await loadMetadataObjects();
-  recoverInterruptedSession();
+  await rt2RefreshMirrors();
   updateActivityTimestamp();
   updateBadge();
 });
@@ -381,7 +479,7 @@ chrome.action.setBadgeBackgroundColor({ color: '#DB4437' }); // Google Red
 // Also check when the extension itself starts (handles extension updates/reloads)
 (async function initializeExtension() {
   await loadMetadataObjects();
-  recoverInterruptedSession();
+  await rt2RefreshMirrors();
   updateActivityTimestamp();
   updateBadge();
 })();
@@ -390,32 +488,38 @@ chrome.action.setBadgeBackgroundColor({ color: '#DB4437' }); // Google Red
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   switch (message.action) {
     case 'startRecording':
-      startRecording(message.sessionName);
-      sendResponse({ success: true, isRecording });
-      break;
+      rt2CompatStart(message.sessionName).then(() => {
+        isRecording = true;
+        updateBadge();
+        sendResponse({ success: true, isRecording: true });
+      });
+      return true;
     
     case 'stopRecording':
-      stopRecording().then(session => {
-        sendResponse({ success: true, isRecording, savedSession: session ? true : false });
+      rt2CompatStop().then(session => {
+        isRecording = false;
+        sendResponse({ success: true, isRecording: false, savedSession: session ? true : false });
       });
-      return true; // Indicate that we'll respond asynchronously
-      break;
+      return true;
     
     case 'pauseRecording':
-      pauseRecording();
-      sendResponse({ success: true, isRecording });
-      break;
+      rt2CompatPause().then(() => {
+        rt2PausedMirror = true;
+        updateBadge();
+        sendResponse({ success: true, isRecording });
+      });
+      return true;
     
     case 'resumeRecording':
-      resumeRecording();
-      sendResponse({ success: true, isRecording });
-      break;
+      rt2CompatResumeRecording().then(() => {
+        rt2PausedMirror = false;
+        updateBadge();
+        sendResponse({ success: true, isRecording });
+      });
+      return true;
     
     case 'forceAutosave':
-      if (isRecording && currentSession) {
-        saveCurrentSession();
-      }
-      // No response needed
+      // v2 appends every event as it happens — nothing to flush.
       break;
       
     case 'checkActivity':
@@ -600,49 +704,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       break;
     
     case 'getStatus':
-      // Ensure state is loaded before responding
-      ensureStateLoaded().then(() => {
-        if (currentSession) {
-          // Get recent pages and searches for the UI
-          const recentPages = currentSession.pageVisits.slice(-5).reverse();
-          const recentSearches = currentSession.searches.slice(-5).reverse();
-          
-          sendResponse({ 
-            isRecording,
-            currentSession: {
-              id: currentSession.id,
-              name: currentSession.name,
-              startTime: currentSession.startTime,
-              isPaused: currentSession.isPaused,
-              events: currentSession.events.length,
-              recentPages,
-              recentSearches
-            }
-          });
-        } else {
-          sendResponse({ 
-            isRecording,
-            currentSession: null
-          });
-        }
+      rt2CompatStatus().then(status => {
+        isRecording = status.isRecording;
+        sendResponse(status);
       });
       return true; // Async response
       break;
       
     case 'renameCurrentSession':
-      if (isRecording && currentSession && message.newName) {
-        currentSession.name = message.newName;
-        // Update the current session in storage
-        chrome.storage.local.set({
-          [STORAGE_KEYS.CURRENT_SESSION]: currentSession,
-          [STORAGE_KEYS.LAST_SAVE_TIMESTAMP]: Date.now()
-        }, () => {
-          if (chrome.runtime.lastError) {
-            console.error('Error saving renamed session:', chrome.runtime.lastError);
-            sendResponse({ success: false, error: chrome.runtime.lastError.message });
-          } else {
-            sendResponse({ success: true });
-          }
+      if (message.newName) {
+        rt2CompatRename(message.newName).then(ok => {
+          sendResponse(ok ? { success: true } : { success: false, error: 'Not recording' });
         });
         return true; // Indicates async response
       } else {
@@ -671,9 +743,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       
     case 'resumeSession':
       if (message.sessionId) {
-        resumeSession(message.sessionId)
-          .then(() => sendResponse({ success: true }))
-          .catch(error => sendResponse({ success: false, error }));
+        rt2CompatResumeSession(message.sessionId)
+          .then(() => {
+            isRecording = true;
+            updateBadge();
+            sendResponse({ success: true });
+          })
+          .catch(error => sendResponse({ success: false, error: String(error && error.message ? error.message : error) }));
         return true; // Indicates async response
       } else {
         sendResponse({ success: false, error: 'No session ID provided' });
@@ -692,7 +768,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       break;
     
     case 'addNote':
-      if (isRecording && currentSession && message.url && message.note) {
+      if (isRecording && message.url && message.note) {
         // Check rate limiting
         const now = Date.now();
         if (now - lastNoteTimestamp < NOTE_RATE_LIMIT_MS) {
@@ -705,8 +781,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         } else {
           // Update the timestamp and add the note
           lastNoteTimestamp = now;
-          addNote(message.url, message.note);
-          sendResponse({ success: true });
+          rt2CompatAddNote(message.url, message.note).then(ok => {
+            sendResponse(ok ? { success: true } : { success: false, error: 'Not recording' });
+          });
+          return true;
         }
       } else {
         sendResponse({ success: false, error: 'Not recording or missing data' });
@@ -715,8 +793,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     
     case 'getExistingNote':
       if (message.url) {
-        const existingNote = getExistingNoteForUrl(message.url);
-        sendResponse({ success: true, note: existingNote });
+        rt2CompatGetExistingNote(message.url).then(existingNote => {
+          sendResponse({ success: true, note: existingNote });
+        });
+        return true;
       } else {
         sendResponse({ success: false, error: 'No URL provided' });
       }
@@ -1473,175 +1553,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 });
 
 // Core recording functions
-function startRecording(sessionName = '') {
-  if (isRecording && currentSession) {
-    // Already recording, just resume if paused
-    if (currentSession.isPaused) {
-      resumeRecording();
-    }
-    return;
-  }
-  
-  isRecording = true;
-  
-  currentSession = {
-    id: generateSessionId(),
-    name: sessionName || `Research Session ${new Date().toLocaleDateString()}`,
-    startTime: new Date().toISOString(),
-    endTime: null,
-    isPaused: false,
-    events: [],
-    searches: [],
-    pageVisits: []
-  };
-  
-  // Capture the current page as the first entry in the session
-  chrome.tabs.query({ active: true, currentWindow: true }, async (tabs) => {
-    if (tabs.length > 0) {
-      const currentTab = tabs[0];
-      const currentTime = new Date().toISOString();
-      
-      // Check if current page is a search engine (this will automatically log the search if it is one)
-      const isSearchEngine = checkForSearch(currentTab);
-      
-      if (!isSearchEngine) {
-        // Check if this page should be excluded from logging
-        const isExcludedPage = await isExcludedFromLoggingAsync(currentTab.url);
-        
-        if (!isExcludedPage) {
-          // Log the page visit using the existing function
-          try {
-            await logPageVisit({
-              url: currentTab.url,
-              title: currentTab.title || '',
-              timestamp: currentTime,
-              tabId: currentTab.id
-            });
-            debugLog('Captured current content page as first event');
-          } catch (error) {
-            console.error('Error logging current page visit:', error);
-          }
-        }
-      }
-    }
-  });
-  
-  // Save recording state
-  chrome.storage.local.set({ 
-    [STORAGE_KEYS.IS_RECORDING]: true,
-    [STORAGE_KEYS.CURRENT_SESSION]: currentSession,
-    [STORAGE_KEYS.LAST_SAVE_TIMESTAMP]: Date.now()
-  });
-  
-  // Set up listeners
-  setupRecordingListeners();
-  
-  // Start autosave
-  startAutosave();
-}
+// [v2] startRecording removed — rt2CompatStart (recording/compat.js)
 
-function stopRecording() {
-  return new Promise((resolve) => {
-    if (!isRecording) {
-      resolve(false);
-      return;
-    }
-    
-    isRecording = false;
-    
-    // Stop the autosave interval
-    stopAutosave();
-    
-    // Stop the activity monitoring
-    stopActivityMonitoring();
-    
-    if (currentSession) {
-      currentSession.endTime = new Date().toISOString();
-      
-      // Add session_ended event
-      const endEvent = {
-        type: 'session_ended',
-        timestamp: currentSession.endTime
-      };
-      currentSession.events.push(endEvent);
-      
-      // Save session to IndexedDB instead of chrome.storage
-      researchTrackerDB.saveSession(currentSession).then(() => {
-        // Clear current session from chrome.storage
-        chrome.storage.local.set({ 
-          [STORAGE_KEYS.IS_RECORDING]: false,
-          [STORAGE_KEYS.CURRENT_SESSION]: null,
-          [STORAGE_KEYS.LAST_SAVE_TIMESTAMP]: null,
-          [STORAGE_KEYS.LAST_ACTIVITY_TIMESTAMP]: null
-        }, () => {
-          // After the session is saved, finalize cleanup
-          const savedSession = { ...currentSession };
-          currentSession = null;
-          
-          // Remove listeners
-          removeRecordingListeners();
-          
-          // Clear the badge
-          chrome.action.setBadgeText({ text: '' });
-          
-          // Resolve with the saved session
-          resolve(savedSession);
-        });
-      }).catch(error => {
-        console.error('Failed to save session to IndexedDB:', error);
-        // Fall back to chrome.storage if IndexedDB fails
-        chrome.storage.local.get([STORAGE_KEYS.SESSIONS], (result) => {
-          const sessions = result[STORAGE_KEYS.SESSIONS] || [];
-          sessions.push(currentSession);
-          
-          chrome.storage.local.set({ 
-            [STORAGE_KEYS.IS_RECORDING]: false,
-            [STORAGE_KEYS.SESSIONS]: sessions,
-            [STORAGE_KEYS.CURRENT_SESSION]: null,
-            [STORAGE_KEYS.LAST_SAVE_TIMESTAMP]: null,
-            [STORAGE_KEYS.LAST_ACTIVITY_TIMESTAMP]: null
-          }, () => {
-            const savedSession = { ...currentSession };
-            currentSession = null;
-            removeRecordingListeners();
-            chrome.action.setBadgeText({ text: '' });
-            resolve(savedSession);
-          });
-        });
-      });
-    } else {
-      resolve(false);
-    }
-  });
-}
 
-function pauseRecording() {
-  if (!isRecording || !currentSession) return;
-  
-  currentSession.isPaused = true;
-  chrome.storage.local.set({ 
-    [STORAGE_KEYS.CURRENT_SESSION]: currentSession,
-    [STORAGE_KEYS.LAST_SAVE_TIMESTAMP]: Date.now()
-  });
-  
-  // Update badge to show yellow "REC" when paused
-  updateBadge();
-  
-  // We don't change isRecording, just pause event collection
-}
+// [v2] stopRecording removed — rt2CompatStop
 
-function resumeRecording() {
-  if (!isRecording || !currentSession) return;
-  
-  currentSession.isPaused = false;
-  chrome.storage.local.set({ 
-    [STORAGE_KEYS.CURRENT_SESSION]: currentSession,
-    [STORAGE_KEYS.LAST_SAVE_TIMESTAMP]: Date.now()
-  });
-  
-  // Update badge to show red "REC" when resumed
-  updateBadge();
-}
+
+// [v2] pauseRecording removed — rt2CompatPause
+
+
+// [v2] resumeRecording removed — rt2CompatResumeRecording
+
 
 // Autosave functionality using alarms
 function startAutosave() {
@@ -1676,23 +1598,8 @@ function stopAutosave() {
   }
 }
 
-function saveCurrentSession() {
-  if (!currentSession) return;
-  
-  debugLog('Autosaving current session...', new Date().toISOString());
-  
-  chrome.storage.local.set({ 
-    [STORAGE_KEYS.CURRENT_SESSION]: currentSession,
-    [STORAGE_KEYS.LAST_SAVE_TIMESTAMP]: Date.now()
-  }, () => {
-    if (chrome.runtime.lastError) {
-      console.error('Error autosaving session:', chrome.runtime.lastError);
-    }
-  });
-  
-  // Update activity timestamp since we're doing something
-  updateActivityTimestamp();
-}
+// [v2] saveCurrentSession removed — v2 appends every event
+
 
 // Activity monitoring functionality using alarms
 function startActivityMonitoring() {
@@ -1750,37 +1657,7 @@ function checkActivity() {
 
 // Ensures state is loaded from storage if not already in memory
 function ensureStateLoaded() {
-  return new Promise((resolve) => {
-    // Always load from storage to ensure we have the latest state
-    // This is especially important when the service worker wakes up from sleep
-    debugLog('Loading state from storage...');
-    chrome.storage.local.get([
-      STORAGE_KEYS.IS_RECORDING,
-      STORAGE_KEYS.CURRENT_SESSION
-    ], (result) => {
-      const wasRecording = isRecording;
-      const hadSession = !!currentSession;
-      
-      isRecording = result[STORAGE_KEYS.IS_RECORDING] || false;
-      currentSession = result[STORAGE_KEYS.CURRENT_SESSION] || null;
-      
-      debugLog('State loaded from storage:', { 
-        isRecording, 
-        hasSession: !!currentSession,
-        wasRecording,
-        hadSession
-      });
-      
-      // If we're recording and have a session, and we weren't already set up, re-setup listeners
-      if (isRecording && currentSession && (!wasRecording || !hadSession)) {
-        debugLog('Setting up recording listeners after state recovery');
-        setupRecordingListeners();
-        startAutosave();
-      }
-      
-      resolve();
-    });
-  });
+  return rt2RefreshMirrors();
 }
 
 function updateBadge(inactiveTimeMs = 0) {
@@ -1791,7 +1668,7 @@ function updateBadge(inactiveTimeMs = 0) {
   }
   
   // Check if recording is paused
-  if (currentSession && currentSession.isPaused) {
+  if (rt2PausedMirror) {
     // Recording but paused - show "REC" in yellow
     chrome.action.setBadgeText({ text: 'REC' });
     chrome.action.setBadgeBackgroundColor({ color: '#F57C00' }); // Amber/Orange
@@ -1815,127 +1692,22 @@ function updateBadge(inactiveTimeMs = 0) {
 }
 
 // Recovery functionality
-function recoverInterruptedSession() {
-  chrome.storage.local.get([
-    STORAGE_KEYS.IS_RECORDING, 
-    STORAGE_KEYS.CURRENT_SESSION,
-    STORAGE_KEYS.LAST_SAVE_TIMESTAMP
-  ], (result) => {
-    // Check if we were recording when the extension crashed/browser closed
-    if (result[STORAGE_KEYS.IS_RECORDING] && result[STORAGE_KEYS.CURRENT_SESSION]) {
-      const savedSession = result[STORAGE_KEYS.CURRENT_SESSION];
-      const lastSaveTime = result[STORAGE_KEYS.LAST_SAVE_TIMESTAMP];
-      
-      // Resume the session
-      isRecording = true;
-      currentSession = savedSession;
-      
-      // Check when the last save was and consider session dead if too old
-      const now = Date.now();
-      const lastSaveAge = now - (lastSaveTime || 0);
-      
-      if (lastSaveAge > 24 * 60 * 60 * 1000) { // 24 hours
-        debugLog('Last save was more than 24 hours ago, stopping session automatically');
-        stopRecording();
-        return;
-      }
-      
-      // Start the autosave again using alarms
-      startAutosave();
-      
-      // Setup listeners again
-      setupRecordingListeners();
-      
-      debugLog('Recovered interrupted recording session', savedSession.id);
-    }
-  });
-}
+// [v2] recoverInterruptedSession removed — v2 state lives in storage, listeners are static
+
 
 // Event listeners
-function setupRecordingListeners() {
-  chrome.tabs.onUpdated.addListener(handleTabUpdated);
-  chrome.webNavigation.onCompleted.addListener(handleNavigationCompleted);
-  // We don't need to register for runtime.onMessage since that's always active
-}
+// [v2] setupRecordingListeners removed — v2 listeners are top-level in recording/adapter.js
 
-function removeRecordingListeners() {
-  chrome.tabs.onUpdated.removeListener(handleTabUpdated);
-  chrome.webNavigation.onCompleted.removeListener(handleNavigationCompleted);
-}
+
+// [v2] removeRecordingListeners removed
+
 
 // Event handlers
-function handleTabUpdated(tabId, changeInfo, tab) {
-  if (!isRecording || !currentSession || currentSession.isPaused) return;
-  if (!changeInfo.url) return;
-  
-  // Update activity timestamp since we detected user navigation
-  updateActivityTimestamp();
-  updateBadge();
-  
-  // Check if this is a search engine
-  const isSearchEngine = checkForSearch(tab);
-  
-  // Check if this is a new tab page or other browser page that shouldn't be logged
-  isExcludedFromLoggingAsync(tab.url).then(async isExcludedPage => {
-    // Only log as a page visit if it's not a search engine and not an excluded page
-    if (!isSearchEngine && !isExcludedPage) {
-      try {
-        await logPageVisit({
-          url: tab.url,
-          title: tab.title || '',
-          timestamp: new Date().toISOString(),
-          tabId: tabId
-        });
-      } catch (error) {
-        console.error('Error logging page visit:', error);
-      }
-    }
-  }).catch(error => {
-    console.error('Error checking if page should be excluded from logging:', error);
-  });
-}
+// [v2] handleTabUpdated removed — navigation logging lives in recording/adapter.js
 
-function handleNavigationCompleted(details) {
-  if (!isRecording || !currentSession || currentSession.isPaused) return;
-  if (details.frameId !== 0) return; // Only track main frame
-  
-  // Update activity timestamp since navigation completed
-  updateActivityTimestamp();
-  updateBadge();
-  
-  // Send message to content script to extract page metadata
-  chrome.tabs.get(details.tabId, (tab) => {
-    if (chrome.runtime.lastError) return;
-    
-    // Check if this is a search engine page
-    const isSearchEngine = checkForSearch(tab);
-    
-    // Check if this is an excluded page
-    isExcludedFromLoggingAsync(tab.url).then(async isExcludedPage => {
-      // Only extract and update metadata for non-search pages and non-excluded pages
-      if (!isSearchEngine && !isExcludedPage) {
-        // Get or create metadata object first
-        const { id: metadataId, metadataObj } = await getOrCreateMetadataObject(tab.url);
-        
-        // If metadata object already has metadata or was manually edited, don't re-extract
-        if (Object.keys(metadataObj.metadata).length > 0 || metadataObj.metadata.manuallyEdited) {
-          debugLog('Metadata already exists or was manually edited for URL, skipping extraction:', tab.url);
-          return;
-        }
-        
-        chrome.tabs.sendMessage(details.tabId, { action: 'extractMetadata' }, async (response) => {
-          if (chrome.runtime.lastError || !response) return;
-          
-          // Process metadata with new DOI-first approach
-          const finalMetadata = await processMetadataWithDOIPriority(details.url, response.metadata);
-          
-          // Update metadata object with processed metadata
-          await updatePageVisitMetadata(details.url, finalMetadata);
-        });
-      }
-    });
-  });
-}
+
+// [v2] handleNavigationCompleted removed — see rt2MetadataExtractionListener below
+
 
 // Helpers
 function isExcludedFromLogging(url) {
@@ -2150,159 +1922,16 @@ function isGoogleSearchPath(pathname) {
   return true;
 }
 
-function checkForSearch(tab) {
-  try {
-    const url = new URL(tab.url);
-    
-    // Check if this is a known search engine
-    for (const [engine, config] of Object.entries(SEARCH_ENGINES)) {
-      if (isProxiedDomain(url.hostname, config.domains)) {
-        // Special handling for different search engines
-        if (engine === 'LEXIS') {
-          // Only treat as search if URL contains /search/
-          if (!url.pathname.includes('/search/')) {
-            // This is a Lexis document page, not a search page
-            return false;
-          }
-        } else if (engine === 'GOOGLE' || engine === 'GOOGLE_NEWS') {
-          // For Google domains, only treat as search if on search paths
-          if (!isGoogleSearchPath(url.pathname)) {
-            // This is a Google content page (Books, Drive, Docs, etc.), not a search page
-            return false;
-          }
-        }
-        
-        const searchQuery = config.queryParam ? url.searchParams.get(config.queryParam) : null;
-        
-        if (searchQuery) {
-          // Gather all search parameters
-          const searchParams = {};
-          for (const [key, value] of url.searchParams.entries()) {
-            searchParams[key] = value;
-          }
-          
-          // Clean up the query for Lexis (decode URL encoding)
-          let cleanQuery = searchQuery;
-          if (engine === 'LEXIS') {
-            try {
-              cleanQuery = decodeURIComponent(searchQuery);
-            } catch (e) {
-              // If decoding fails, use the original
-              cleanQuery = searchQuery;
-            }
-          }
-          
-          // Log search
-          logSearch({
-            engine,
-            domain: url.hostname,
-            query: cleanQuery,
-            params: searchParams,
-            url: tab.url,
-            timestamp: new Date().toISOString(),
-            tabId: tab.id
-          });
-          
-          // Send message to content script to extract search results
-          chrome.tabs.sendMessage(tab.id, { 
-            action: 'extractSearchResults',
-            engine: engine
-          });
-          
-          return true; // This is a search engine page
-        }
-        
-        // For Google domains, only return true if on search paths (even without query)
-        if (engine === 'GOOGLE' || engine === 'GOOGLE_NEWS') {
-          return isGoogleSearchPath(url.pathname);
-        }
-        
-        // For other non-Lexis search engines, still return true even without query
-        // (e.g., Bing homepage, DuckDuckGo homepage)
-        if (engine !== 'LEXIS') {
-          return true;
-        }
-      }
-    }
-    
-    return false; // This is not a search engine page
-  } catch (e) {
-    console.error('Error checking for search:', e);
-    return false;
-  }
-}
+// [v2] checkForSearch removed — search detection lives in recording/adapter.js (rt2DetectSearch)
 
-function logSearch(searchData) {
-  if (!currentSession) return;
-  
-  const searchEvent = {
-    type: 'search',
-    ...searchData
-  };
-  
-  currentSession.events.push(searchEvent);
-  currentSession.searches.push(searchEvent);
-  
-  // Save to storage and update last save timestamp
-  chrome.storage.local.set({ 
-    [STORAGE_KEYS.CURRENT_SESSION]: currentSession,
-    [STORAGE_KEYS.LAST_SAVE_TIMESTAMP]: Date.now()
-  });
-}
 
-async function logPageVisit(visitData) {
-  if (!currentSession) return;
-  
-  // Get or create metadata object for this URL
-  const { id: metadataId } = await getOrCreateMetadataObject(visitData.url);
-  
-  // Try to find the search that led to this page
-  let sourceSearch = null;
-  const searchesReversed = [...currentSession.searches].reverse();
-  
-  for (const search of searchesReversed) {
-    if (search.timestamp < visitData.timestamp) {
-      sourceSearch = {
-        engine: search.engine,
-        query: search.query,
-        url: search.url,
-        timestamp: search.timestamp
-      };
-      break;
-    }
-  }
-  
-  // Add session data to metadata object
-  const sessionData = {
-    timestamp: visitData.timestamp
-  };
-  
-  if (sourceSearch) {
-    sessionData.searchContext = sourceSearch;
-  }
-  
-  await addSessionDataToMetadataObject(metadataId, currentSession.id, sessionData);
-  
-  const visitEvent = {
-    type: 'pageVisit',
-    ...visitData,
-    metadataId,
-    sourceSearch,
-    notes: []
-  };
-  
-  currentSession.events.push(visitEvent);
-  currentSession.pageVisits.push(visitEvent);
-  
-  // Save to storage and update last save timestamp
-  chrome.storage.local.set({ 
-    [STORAGE_KEYS.CURRENT_SESSION]: currentSession,
-    [STORAGE_KEYS.LAST_SAVE_TIMESTAMP]: Date.now()
-  });
-}
+// [v2] logSearch removed — engine record log
+
+
+// [v2] logPageVisit removed — engine record log; metadata linkage via rt2RecordHook
+
 
 async function updatePageVisitMetadata(url, metadata) {
-  if (!currentSession) return;
   
   debugLog('Updating metadata for URL:', url, metadata);
   
@@ -2978,151 +2607,11 @@ async function processMetadataWithDOIPriority(url, extractedMetadata) {
 }
 
 
-function getExistingNoteForUrl(url) {
-  if (!currentSession) return null;
-  
-  // Check searches first
-  for (let i = currentSession.searches.length - 1; i >= 0; i--) {
-    const search = currentSession.searches[i];
-    if (search.url === url && search.notes && search.notes.length > 0) {
-      // Return the most recent note
-      return search.notes[search.notes.length - 1].content;
-    }
-  }
-  
-  // Check page visits
-  for (let i = currentSession.pageVisits.length - 1; i >= 0; i--) {
-    const visit = currentSession.pageVisits[i];
-    if (visit.url === url && visit.notes && visit.notes.length > 0) {
-      // Return the most recent note
-      return visit.notes[visit.notes.length - 1].content;
-    }
-  }
-  
-  // Also check in the general pages array
-  if (currentSession.pages) {
-    for (let i = currentSession.pages.length - 1; i >= 0; i--) {
-      const page = currentSession.pages[i];
-      if (page.url === url && page.notes && page.notes.length > 0) {
-        // Return the most recent note
-        return page.notes[page.notes.length - 1].content;
-      }
-    }
-  }
-  
-  return null;
-}
+// [v2] getExistingNoteForUrl removed — rt2CompatGetExistingNote
 
-function addNote(url, note) {
-  if (!currentSession) return;
-  
-  const timestamp = new Date().toISOString();
-  
-  // Create a single note object to reuse
-  const noteObj = {
-    content: note,
-    timestamp: timestamp
-  };
-  
-  // First check if this is a search page
-  let isSearchPage = false;
-  let pageFound = false;
-  
-  // Check for search page match
-  for (let i = currentSession.searches.length - 1; i >= 0; i--) {
-    const search = currentSession.searches[i];
-    if (search.url === url) {
-      isSearchPage = true;
-      pageFound = true;
-      
-      // Initialize notes array if needed
-      if (!search.notes) {
-        search.notes = [];
-      }
-      
-      // Replace existing note or add new one (only one note per item)
-      search.notes = [noteObj];
-      
-      // Also update in events array - find the search event
-      for (let j = currentSession.events.length - 1; j >= 0; j--) {
-        const event = currentSession.events[j];
-        if (event.type === 'search' && event.url === url) {
-          if (!event.notes) {
-            event.notes = [];
-          }
-          event.notes = [noteObj];
-          
-          // Add a note_added property to the event to indicate it has notes
-          event.has_notes = true;
-          
-          debugLog(`Updated note for search: ${search.query}`);
-          break;
-        }
-      }
-      
-      break;
-    }
-  }
-  
-  // If not a search page, then try to find a content page visit
-  if (!isSearchPage) {
-    for (let i = currentSession.pageVisits.length - 1; i >= 0; i--) {
-      const visit = currentSession.pageVisits[i];
-      if (visit.url === url) {
-        pageFound = true;
-        
-        // Initialize notes array if needed
-        if (!visit.notes) {
-          visit.notes = [];
-        }
-        
-        // Replace existing note or add new one (only one note per item)
-        visit.notes = [noteObj];
-        
-        // Also update in events array - find the page visit event
-        for (let j = currentSession.events.length - 1; j >= 0; j--) {
-          const event = currentSession.events[j];
-          if (event.type === 'pageVisit' && event.url === url) {
-            if (!event.notes) {
-              event.notes = [];
-            }
-            event.notes = [noteObj];
-            
-            // Add a note_added property to the event to indicate it has notes
-            event.has_notes = true;
-            
-            debugLog(`Updated note for page visit: ${visit.title}`);
-            break;
-          }
-        }
-        
-        break;
-      }
-    }
-  }
-  
-  // If we couldn't find any matching page or search, add as standalone note
-  if (!pageFound) {
-    console.warn(`Could not find any record for URL: ${url}`);
-    
-    // Add a standalone note event
-    const noteEvent = {
-      type: 'note',
-      url,
-      content: note,
-      timestamp: timestamp,
-      orphaned: true
-    };
-    
-    currentSession.events.push(noteEvent);
-  }
-  
-  // Save the updated session and update last save timestamp
-  chrome.storage.local.set({ 
-    [STORAGE_KEYS.CURRENT_SESSION]: currentSession,
-    [STORAGE_KEYS.LAST_SAVE_TIMESTAMP]: Date.now()
-  });
-}
+
+// [v2] addNote removed — rt2CompatAddNote
+
 
 // Helper functions
 function generateSessionId() {
@@ -3160,89 +2649,13 @@ async function renameSession(sessionId, newName) {
   }
 }
 
-async function resumeSession(sessionId) {
-  // Don't allow resuming if already recording
-  if (isRecording && currentSession) {
-    return Promise.reject('Cannot resume session while another session is active. Please stop the current session first.');
-  }
+// [v2] resumeSession removed — rt2CompatResumeSession
 
-  try {
-    // Get session from IndexedDB
-    const sessionToResume = await researchTrackerDB.getSession(sessionId);
-
-    if (!sessionToResume) {
-      return Promise.reject('Session not found');
-    }
-
-    // Process session resumption
-    // IMPORTANT: Save to chrome.storage BEFORE deleting from IndexedDB
-    // This prevents data loss if the save operation fails
-    return new Promise((resolve, reject) => {
-      processSessionResume(sessionToResume, sessionId, resolve, reject);
-    });
-  } catch (error) {
-    console.error('Error resuming session:', error);
-    return Promise.reject(error);
-  }
-}
 
 // Helper function to process session resumption
 // sessionIdToDelete: Delete this session from IndexedDB after successful save
-function processSessionResume(sessionToResume, sessionIdToDelete, resolve, reject) {
-  // Validate session data integrity
-  if (!validateSessionData(sessionToResume)) {
-    reject('Session data is corrupted and cannot be resumed');
-    return;
-  }
+// [v2] processSessionResume removed
 
-  // Prepare session for resumption
-  const resumedSession = {
-    ...sessionToResume,
-    endTime: null, // Clear end time
-    isPaused: false
-  };
-
-  // Add session_resumed event
-  const resumeEvent = {
-    type: 'session_resumed',
-    timestamp: new Date().toISOString(),
-    previousEndTime: sessionToResume.endTime
-  };
-
-  resumedSession.events.push(resumeEvent);
-
-  // Set as current session
-  currentSession = resumedSession;
-  isRecording = true;
-
-  // Save updated state
-  chrome.storage.local.set({
-    [STORAGE_KEYS.IS_RECORDING]: true,
-    [STORAGE_KEYS.CURRENT_SESSION]: currentSession,
-    [STORAGE_KEYS.LAST_SAVE_TIMESTAMP]: Date.now()
-  }, async () => {
-    if (chrome.runtime.lastError) {
-      reject(chrome.runtime.lastError);
-    } else {
-      // Save succeeded! Now safe to delete from IndexedDB
-      try {
-        await researchTrackerDB.deleteSession(sessionIdToDelete);
-        debugLog(`Session ${sessionIdToDelete} successfully moved from IndexedDB to active session`);
-      } catch (error) {
-        // Log but don't fail - session is already resumed successfully
-        console.warn(`Failed to delete session from IndexedDB after resume:`, error);
-      }
-
-      // Set up listeners and autosave
-      setupRecordingListeners();
-      startAutosave();
-      updateBadge();
-
-      debugLog('Session resumed:', sessionToResume.id);
-      resolve();
-    }
-  });
-}
 
 function validateSessionData(session) {
   // Check required fields exist
