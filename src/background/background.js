@@ -3693,7 +3693,20 @@ async function updatePopupBehavior() {
   if (useSidePanel && chrome.sidePanel) {
     // Disable default popup so onClicked can fire for sidebar
     await chrome.action.setPopup({ popup: '' });
+    // Also tell the BROWSER to open the panel on icon click. This is
+    // the recommended pattern, and some Chromium forks (Dia) need it:
+    // their window layer doesn't reliably fire action.onClicked with
+    // an empty popup or honor programmatic sidePanel.open(), so the
+    // manual handler below never runs there.
+    if (chrome.sidePanel.setPanelBehavior) {
+      await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true })
+        .catch((error) => console.error('setPanelBehavior failed:', error));
+    }
   } else {
+    if (chrome.sidePanel && chrome.sidePanel.setPanelBehavior) {
+      await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: false })
+        .catch((error) => console.error('setPanelBehavior failed:', error));
+    }
     // Enable default popup (native browser action popup)
     await chrome.action.setPopup({ popup: 'src/popup/popup.html' });
   }
