@@ -2615,10 +2615,21 @@ function formatDateParts(dateStr) {
   } else {
     // Try to use Date parsing as last resort, but parse components directly
     const date = new Date(dateStr);
-    if (!isNaN(date.getTime())) {
+    const yearMatch = dateStr.match(/\b(19|20)\d{2}\b/);
+    // ...but only trust it when the string really carries month info:
+    // V8 parses "Spring 2026" as Jan 1, which would fabricate a date.
+    const hasMonthInfo = /jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec/i.test(dateStr) ||
+      (dateStr.match(/\d+/g) || []).length >= 2;
+    if (!isNaN(date.getTime()) && hasMonthInfo) {
       year = date.getFullYear().toString();
       monthNum = String(date.getMonth() + 1).padStart(2, '0');
       day = String(date.getDate()).padStart(2, '0');
+    } else if (yearMatch) {
+      // Year-regex rescue for "Spring 2026"-style strings — parity with
+      // the background/content engines.
+      year = yearMatch[0];
+      monthNum = '';
+      day = '';
     } else {
       // If all parsing fails, return the original string
       return { 

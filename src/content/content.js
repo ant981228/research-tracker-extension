@@ -5339,23 +5339,27 @@ function generateCitationPreview(metadata, url, title, settings) {
       monthNum = slashMatch[1].padStart(2, '0');
       day = slashMatch[2].padStart(2, '0');
     } else {
-      // Try to extract just a 4-digit year from the string as a fallback
+      // Full Date parse FIRST: ISO timestamps and written-out dates
+      // carry a real day/month, and running the year-regex before this
+      // ate them down to a bare year (preview vs copy divergence bug).
+      const date = new Date(dateStr);
       const yearMatch = dateStr.match(/\b(19|20)\d{2}\b/);
-      if (yearMatch) {
+      // ...but only trust it when the string really carries month info:
+      // V8 parses "Spring 2026" as Jan 1, which would fabricate a date.
+      const hasMonthInfo = /jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec/i.test(dateStr) ||
+        (dateStr.match(/\d+/g) || []).length >= 2;
+      if (!isNaN(date.getTime()) && hasMonthInfo) {
+        year = date.getFullYear().toString();
+        monthNum = String(date.getMonth() + 1).padStart(2, '0');
+        day = String(date.getDate()).padStart(2, '0');
+      } else if (yearMatch) {
+        // Year-regex LAST resort — rescues "Spring 2026"-style strings.
         year = yearMatch[0];
         monthNum = '';
         day = '';
       } else {
-        // Try to use Date parsing as last resort, but avoid timezone issues
-        const date = new Date(dateStr);
-        if (!isNaN(date.getTime())) {
-          year = date.getFullYear().toString();
-          monthNum = String(date.getMonth() + 1).padStart(2, '0');
-          day = String(date.getDate()).padStart(2, '0');
-        } else {
-          // If all parsing fails, return the original string
-          return { year: dateStr, yearShort: dateStr, month: '', monthNum: '', day: '', date: dateStr };
-        }
+        // If all parsing fails, return the original string
+        return { year: dateStr, yearShort: dateStr, month: '', monthNum: '', day: '', date: dateStr };
       }
     }
     
