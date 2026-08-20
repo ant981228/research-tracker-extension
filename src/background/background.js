@@ -865,7 +865,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             // Inject a script to generate and copy the citation
             const result = await chrome.scripting.executeScript({
               target: { tabId: currentTab.id },
-              func: (metadata, url, title, settings, withTokens, withArticle) => {
+              func: (metadata, url, title, settings, withTokens, withArticle, returnText) => {
                 // This function runs in the content script context
                 // We need to recreate the citation generation logic here
                 const citationFormats = {
@@ -1190,16 +1190,23 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
                 // Copy to clipboard. On article failure the cite (+ trailer)
                 // still lands, so the keystroke is never a total no-op.
-                navigator.clipboard.writeText(textToCopy);
+                // returnText mode skips the in-page write: a popup/sidebar
+                // caller holds focus, which can make the page-context
+                // clipboard write reject — the caller writes it instead.
+                if (!returnText) {
+                  navigator.clipboard.writeText(textToCopy);
+                }
                 
                 return {
                   citation: citation,
                   missingFields: missingFields,
-                  articleFailed: articleFailed
+                  articleFailed: articleFailed,
+                  text: returnText ? textToCopy : undefined
                 };
               },
               args: [metadata, url, currentTab.title, settings,
-                     Boolean(message.withTokens), Boolean(message.withArticle)]
+                     Boolean(message.withTokens), Boolean(message.withArticle),
+                     Boolean(message.returnText)]
             });
             
             // Extract the result from the script execution
@@ -1212,7 +1219,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             } else if (scriptResult) {
               sendResponse({ 
                 success: true, 
-                missingFields: scriptResult.missingFields 
+                missingFields: scriptResult.missingFields,
+                text: scriptResult.text
               });
             } else {
               sendResponse({ success: true });

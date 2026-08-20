@@ -601,6 +601,54 @@ function init() {
       });
     }
 
+    // Copy cite / Copy article: the background builds the text (article
+    // via Readability in the page) and returns it — the clipboard write
+    // happens HERE, because the pane holds focus and an injected
+    // page-context write can reject when the page isn't focused.
+    // Trailer-free, like the on-page preview's buttons: hand-copied
+    // text gets pasted anywhere and must stay clean.
+    const wireSidebarCopy = (btn, flags, idleLabel) => {
+      if (!btn) return;
+      btn.addEventListener('click', () => {
+        btn.disabled = true;
+        btn.textContent = flags.withArticle ? 'Extracting…' : 'Copying…';
+        const restore = (label) => {
+          btn.textContent = label;
+          setTimeout(() => {
+            btn.textContent = idleLabel;
+            btn.disabled = false;
+          }, 1500);
+        };
+        chrome.runtime.sendMessage(
+          { action: 'copyCitationForCurrentPage', returnText: true, ...flags },
+          async (response) => {
+            if (response && response.success && response.text) {
+              try {
+                await navigator.clipboard.writeText(response.text);
+                restore('Copied ✓');
+              } catch (err) {
+                console.error('Sidebar copy failed:', err);
+                restore('Failed');
+              }
+            } else {
+              console.error('Sidebar copy failed:', response?.error);
+              restore('Failed');
+            }
+          },
+        );
+      });
+    };
+    wireSidebarCopy(
+      document.getElementById('sidebar-citation-copy-btn'),
+      {},
+      'Copy cite',
+    );
+    wireSidebarCopy(
+      document.getElementById('sidebar-citation-copy-article-btn'),
+      { withArticle: true },
+      'Copy article',
+    );
+
     // Tell content script to hide page overlay citation preview
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
       if (tabs.length > 0) {

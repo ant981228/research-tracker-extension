@@ -4926,17 +4926,21 @@ document.addEventListener('keydown', async (e) => {
   // Variants (used by Fast Debate Paste, fine by hand too):
   //   Ctrl+Shift+q — cite + F8-token trailer for CardMirror
   //   Ctrl+Alt+q   — cite + extracted article text + trailer
-  if (e.ctrlKey && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'q') {
+  // Match Q by PHYSICAL key: on macOS, Option changes e.key
+  // (Ctrl+Alt+Q arrives as "œ" on a US layout), so e.key checks would
+  // silently miss the article variant.
+  const isQKey = e.code === 'KeyQ' || e.key.toLowerCase() === 'q';
+  if (e.ctrlKey && !e.altKey && !e.shiftKey && isQKey) {
     debugLog('Research Tracker: Ctrl+q detected - Copy Citation');
     e.preventDefault();
     e.stopPropagation();
     sendCopyCitation({});
-  } else if (e.ctrlKey && e.shiftKey && !e.altKey && e.key.toLowerCase() === 'q') {
+  } else if (e.ctrlKey && e.shiftKey && !e.altKey && isQKey) {
     debugLog('Research Tracker: Ctrl+Shift+q detected - Copy Citation with F8 tokens');
     e.preventDefault();
     e.stopPropagation();
     sendCopyCitation({ withTokens: true });
-  } else if (e.ctrlKey && e.altKey && !e.shiftKey && e.key.toLowerCase() === 'q') {
+  } else if (e.ctrlKey && e.altKey && !e.shiftKey && isQKey) {
     debugLog('Research Tracker: Ctrl+Alt+q detected - Copy Article + Citation');
     e.preventDefault();
     e.stopPropagation();
