@@ -1251,7 +1251,28 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 if (withArticle && typeof Readability !== 'undefined') {
                   try {
                     const article = new Readability(document.cloneNode(true)).parse();
-                    if (article && article.textContent) {
+                    // Paragraphs come from the cleaned HTML's BLOCK
+                    // ELEMENTS, not from textContent: minified markup
+                    // (CNBC et al.) has no newlines between tags, so
+                    // textContent is one giant line there.
+                    if (article && article.content) {
+                      const BLOCK_SEL =
+                        'p, li, h1, h2, h3, h4, h5, h6, blockquote, pre, figcaption';
+                      const articleDoc = new DOMParser().parseFromString(
+                        article.content, 'text/html');
+                      const parts = [];
+                      articleDoc.body.querySelectorAll(BLOCK_SEL).forEach((b) => {
+                        // Containers (blockquote holding <p>s) defer to
+                        // their leaves so text isn't duplicated.
+                        if (b.querySelector(BLOCK_SEL)) return;
+                        const t = (b.textContent || '').replace(/\s+/g, ' ').trim();
+                        if (t) parts.push(t);
+                      });
+                      articleText = parts.join('\n\n');
+                    }
+                    if (!articleText && article && article.textContent) {
+                      // Fallback for content-less parses: the old
+                      // whitespace-based splitting.
                       articleText = article.textContent
                         .split('\n').map((l) => l.trim()).filter(Boolean).join('\n\n');
                     }
