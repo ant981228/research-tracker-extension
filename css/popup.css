@@ -399,6 +399,9 @@ h3 {
 
 .page-actions {
   display: flex;
+  /* Wrap instead of shrink: a button that can't fit its whole label
+     drops to the next line (narrow sidebar columns). */
+  flex-wrap: wrap;
   gap: 5px;
   margin-top: 4px;
 }
@@ -413,6 +416,8 @@ h3 {
   cursor: pointer;
   display: inline-block;
   flex: 1;
+  /* Labels never clip mid-word — the row wraps instead. */
+  white-space: nowrap;
 }
 
 /* .page-action-btn.edit-metadata-btn is now styled by the global rule above */
@@ -422,6 +427,15 @@ h3 {
   grid-template-columns: 1fr 1fr;
   gap: 8px;
   margin-top: 16px;
+}
+
+/* Narrow sidebar columns: side-by-side, the View Recent labels wrap to
+   a second line that the buttons' fixed 32px height clips — stack them
+   one per row so each label fits on one line, centered. */
+@media (max-width: 360px) {
+  .action-buttons {
+    grid-template-columns: 1fr;
+  }
 }
 
 .action-btn, 
