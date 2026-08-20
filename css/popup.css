@@ -415,7 +415,11 @@ h3 {
   font-size: 11px;
   cursor: pointer;
   display: inline-block;
-  flex: 1;
+  /* auto basis, not 0: with flex-basis 0 every button "fits" on one
+     line by definition and flex-wrap never triggers — the row just
+     overflowed the card. Sized by label, grown to fill, wrapped when
+     the labels genuinely don't fit. */
+  flex: 1 1 auto;
   /* Labels never clip mid-word — the row wraps instead. */
   white-space: nowrap;
 }
