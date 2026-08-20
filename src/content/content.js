@@ -4922,33 +4922,55 @@ document.addEventListener('keydown', async (e) => {
     showToast(`${fieldName} updated: ${parsedValue}`);
   }
   
-  // Check for Ctrl+q (copy citation) - always use Ctrl, even on Mac
-  if (e.ctrlKey && !e.shiftKey && !e.altKey && e.key === 'q') {
+  // Check for Ctrl+q (copy citation) - always use Ctrl, even on Mac.
+  // Variants (used by Fast Debate Paste, fine by hand too):
+  //   Ctrl+Shift+q — cite + F8-token trailer for CardMirror
+  //   Ctrl+Alt+q   — cite + extracted article text + trailer
+  if (e.ctrlKey && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'q') {
     debugLog('Research Tracker: Ctrl+q detected - Copy Citation');
     e.preventDefault();
     e.stopPropagation();
-    
-    // Send message to extension to copy citation for current page
-    chrome.runtime.sendMessage({
-      action: 'copyCitationForCurrentPage'
-    }, (response) => {
-      if (response && response.success) {
-        if (response.missingFields && response.missingFields.length > 0) {
-          // Yellow warning toast with missing fields
-          const missingFieldsList = response.missingFields.join(', ');
-          showToast(`Citation copied (missing: ${missingFieldsList})`, 'warning');
-        } else {
-          // Green success toast
-          showToast('Citation copied to clipboard', 'success');
-        }
-      } else {
-        // Red error toast
-        const errorMsg = response?.error || 'Unknown error';
-        showToast(`Failed to copy citation: ${errorMsg}`, 'error');
-      }
-    });
+    sendCopyCitation({});
+  } else if (e.ctrlKey && e.shiftKey && !e.altKey && e.key.toLowerCase() === 'q') {
+    debugLog('Research Tracker: Ctrl+Shift+q detected - Copy Citation with F8 tokens');
+    e.preventDefault();
+    e.stopPropagation();
+    sendCopyCitation({ withTokens: true });
+  } else if (e.ctrlKey && e.altKey && !e.shiftKey && e.key.toLowerCase() === 'q') {
+    debugLog('Research Tracker: Ctrl+Alt+q detected - Copy Article + Citation');
+    e.preventDefault();
+    e.stopPropagation();
+    showToast('Extracting article…', 'info');
+    sendCopyCitation({ withTokens: true, withArticle: true });
   }
 }, true); // Use capture phase
+
+// Shared sender for the three copy-citation variants. The background
+// handler builds the cite (plus tokens/article when asked) and copies
+// it; this just routes the outcome into a toast.
+function sendCopyCitation(flags) {
+  chrome.runtime.sendMessage({
+    action: 'copyCitationForCurrentPage',
+    withTokens: Boolean(flags.withTokens),
+    withArticle: Boolean(flags.withArticle),
+  }, (response) => {
+    if (response && response.success) {
+      const what = flags.withArticle ? 'Article + citation' : 'Citation';
+      if (response.missingFields && response.missingFields.length > 0) {
+        // Yellow warning toast with missing fields
+        const missingFieldsList = response.missingFields.join(', ');
+        showToast(`${what} copied (missing: ${missingFieldsList})`, 'warning');
+      } else {
+        // Green success toast
+        showToast(`${what} copied to clipboard`, 'success');
+      }
+    } else {
+      // Red error toast
+      const errorMsg = response?.error || 'Unknown error';
+      showToast(`Failed to copy: ${errorMsg}`, 'error');
+    }
+  });
+}
 
 // Log that keyboard shortcuts are initialized
 const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
@@ -4956,7 +4978,7 @@ const modifierName = isMac ? 'Cmd' : 'Ctrl';
 debugLog('Research Tracker: Keyboard shortcuts initialized.');
 debugLog(`  ${modifierName}+1: Author | ${modifierName}+2: Quals | ${modifierName}+3: Date`);
 debugLog(`  ${modifierName}+4: Title | ${modifierName}+5: Journal | ${modifierName}+6: Publication Info | ${modifierName}+7: Pages | ${modifierName}+8: DOI`);
-debugLog(`  Ctrl+q: Copy citation for current page`);
+debugLog(`  Ctrl+q: Copy citation | Ctrl+Shift+q: + F8 tokens | Ctrl+Alt+q: + article text`);
 
 // ===== CITATION PREVIEW FUNCTIONALITY =====
 

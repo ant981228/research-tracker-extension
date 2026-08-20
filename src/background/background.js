@@ -853,10 +853,19 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           const settings = result.citationSettings || { format: 'apa', customTemplate: '' };
           
           try {
+            // Article mode: load Readability into the isolated world first
+            // so the main function below can call it (globals persist
+            // across executeScript calls within the same world).
+            if (message.withArticle) {
+              await chrome.scripting.executeScript({
+                target: { tabId: currentTab.id },
+                files: ['lib/Readability.js'],
+              });
+            }
             // Inject a script to generate and copy the citation
             const result = await chrome.scripting.executeScript({
               target: { tabId: currentTab.id },
-              func: (metadata, url, title, settings) => {
+              func: (metadata, url, title, settings, withTokens, withArticle) => {
                 // This function runs in the content script context
                 // We need to recreate the citation generation logic here
                 const citationFormats = {
@@ -1120,20 +1129,87 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 if (!metadata.date && !metadata.publishDate) missingFields.push('date');
                 if (!metadata.publisher && !metadata.journal) missingFields.push('publisher/journal');
                 
-                // Copy to clipboard
-                navigator.clipboard.writeText(citation);
+                // F8 tokens (CardMirror cite emphasis): lastname(s) +
+                // shortdate of the leading author block, firstnames
+                // unmarked — same contract as CardMirror's AI cite
+                // creator. Computed from the finished cite's head, and
+                // only emitted when it actually looks like the debate
+                // format ("Names SHORTDATE, ..."), so APA/MLA users
+                // never get a trailer.
+                let f8Tokens = [];
+                if (withTokens) {
+                  const head = citation.split(',')[0].trim();
+                  const dm = head.match(/^(.*\S)\s+(\S+)$/);
+                  const dateOk = dm && /^(\d{1,2}\/\d{1,2}|\d{2}|\d{4})$/.test(dm[2]);
+                  if (dateOk) {
+                    const names = dm[1];
+                    const date = dm[2];
+                    const lastWord = (s) => s.trim().split(/\s+/).pop();
+                    const et = names.match(/^(.*?)\s+et al\.$/);
+                    if (et) {
+                      f8Tokens = [`${lastWord(et[1])} et al. ${date}`];
+                    } else if (names.includes(' & ')) {
+                      const [a, b] = names.split(' & ');
+                      f8Tokens = [`${lastWord(a)} & `, `${lastWord(b)} ${date}`];
+                    } else {
+                      f8Tokens = [`${lastWord(names)} ${date}`];
+                    }
+                    // Each token MUST be a verbatim substring of the copied
+                    // text or the editor can't locate it.
+                    f8Tokens = f8Tokens.filter((t) => citation.includes(t));
+                  }
+                }
+
+                // Article mode: Readability (Firefox reader mode's engine)
+                // strips the page down to the article body. Runs on a clone
+                // so the live page is untouched.
+                let articleText = '';
+                if (withArticle && typeof Readability !== 'undefined') {
+                  try {
+                    const article = new Readability(document.cloneNode(true)).parse();
+                    if (article && article.textContent) {
+                      articleText = article.textContent
+                        .split('\n').map((l) => l.trim()).filter(Boolean).join('\n\n');
+                    }
+                  } catch (e) {
+                    console.error('Readability parse failed:', e);
+                  }
+                }
+
+                const articleFailed = withArticle && !articleText;
+                let textToCopy = citation;
+                if (articleText) {
+                  textToCopy += '\n\n' + articleText;
+                }
+                if (f8Tokens.length > 0) {
+                  // Machine trailer for Fast Debate Paste — stripped before
+                  // the text reaches CardMirror. Only on the token/article
+                  // shortcuts, never on plain Ctrl+Q.
+                  textToCopy += '\n@@F8:' + f8Tokens.join('||') + '@@';
+                }
+
+                // Copy to clipboard. On article failure the cite (+ trailer)
+                // still lands, so the keystroke is never a total no-op.
+                navigator.clipboard.writeText(textToCopy);
                 
                 return {
                   citation: citation,
-                  missingFields: missingFields
+                  missingFields: missingFields,
+                  articleFailed: articleFailed
                 };
               },
-              args: [metadata, url, currentTab.title, settings]
+              args: [metadata, url, currentTab.title, settings,
+                     Boolean(message.withTokens), Boolean(message.withArticle)]
             });
             
             // Extract the result from the script execution
             const scriptResult = result[0]?.result;
-            if (scriptResult) {
+            if (scriptResult && scriptResult.articleFailed) {
+              sendResponse({
+                success: false,
+                error: "Couldn't extract an article from this page — the cite was copied alone.",
+              });
+            } else if (scriptResult) {
               sendResponse({ 
                 success: true, 
                 missingFields: scriptResult.missingFields 

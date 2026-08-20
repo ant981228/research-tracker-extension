@@ -37,7 +37,36 @@ body {
 /* Sidebar mode: make width responsive */
 body.sidebar-mode {
   width: 100%;
-  min-width: 320px; /* Minimum for very narrow sidebars */
+  min-width: 0; /* Fit even Dia's ~250px narrowest column */
+}
+
+/* Very narrow sidebars (Dia's minimum column is ~250px): wrap every
+   flex row, tighten padding, and let controls shrink instead of
+   spilling past the edge. */
+@media (max-width: 320px) {
+  body.sidebar-mode .container {
+    padding: 8px;
+  }
+  body.sidebar-mode .container div {
+    flex-wrap: wrap;
+  }
+  body.sidebar-mode button,
+  body.sidebar-mode select,
+  body.sidebar-mode input[type="text"],
+  body.sidebar-mode textarea {
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+  }
+  body.sidebar-mode h1 {
+    font-size: 16px;
+  }
+  /* Long URLs / cites must wrap, not widen the column */
+  body.sidebar-mode #sidebar-citation-content,
+  body.sidebar-mode .page-url,
+  body.sidebar-mode .search-query {
+    overflow-wrap: anywhere;
+  }
 }
 
 .container {
